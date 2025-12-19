@@ -11,16 +11,19 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  firstName String?
-  lastName  String?
-  role      Role     @default(USER)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?
+  id          String    @id @default(uuid())
+  email       String    @unique
+  password    String?
+  firebaseUid String?   @unique
+  firstName   String?
+  lastName    String?
+  avatar      String?
+  role        Role      @default(USER)
+  isActive    Boolean   @default(true)
+  lastLogin   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 
   refreshTokens RefreshToken[]
   notifications Notification[]
@@ -28,6 +31,7 @@ model User {
 
   @@index([email])
   @@index([role])
+  @@index([firebaseUid])
   @@map("users")
 }
 

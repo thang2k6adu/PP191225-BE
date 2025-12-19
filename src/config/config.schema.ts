@@ -41,6 +41,18 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   REDIS_PASSWORD: string;
+
+  @IsOptional()
+  @IsString()
+  FIREBASE_PROJECT_ID: string;
+
+  @IsOptional()
+  @IsString()
+  FIREBASE_CLIENT_EMAIL: string;
+
+  @IsOptional()
+  @IsString()
+  FIREBASE_PRIVATE_KEY: string;
 }
 
 export function validate(config: Record<string, unknown>) {

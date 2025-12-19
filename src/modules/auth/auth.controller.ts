@@ -4,11 +4,16 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { Public } from '@/common/decorators/public.decorator';
-import { AuthResponse } from '@/common/interfaces/api-response.interface';
+import {
+  AuthResponse,
+  FirebaseLoginResponse,
+  RefreshTokenResponse,
+} from '@/common/interfaces/api-response.interface';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -67,14 +72,94 @@ export class AuthController {
   }
 
   @Public()
+  @Post('firebase/login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Login with Firebase ID token',
+    description:
+      'Login using Firebase ID token. deviceId and platform are optional and can be omitted for testing.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Login success',
+    schema: {
+      example: {
+        error: false,
+        code: 200,
+        message: 'Login success',
+        data: {
+          user: {
+            id: 'user_123',
+            email: 'test@gmail.com',
+            name: 'Nguyen Van A',
+            avatar: 'https://avatar.url',
+            role: 'user',
+          },
+          tokens: {
+            accessToken: 'ACCESS_TOKEN_JWT',
+            refreshToken: 'REFRESH_TOKEN',
+            expiresIn: 900,
+          },
+        },
+        traceId: 'VIHOLaKaWe',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Firebase token expired',
+    schema: {
+      example: {
+        error: true,
+        code: 401,
+        message: 'Firebase token expired',
+        data: null,
+        traceId: 'ASD123QWE',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Invalid token or user disabled',
+    schema: {
+      example: {
+        error: true,
+        code: 403,
+        message: 'Invalid token!',
+        data: null,
+        traceId: 'VIHOLaKaWe',
+      },
+    },
+  })
+  async firebaseLogin(@Body() firebaseLoginDto: FirebaseLoginDto): Promise<FirebaseLoginResponse> {
+    return this.authService.firebaseLogin(firebaseLoginDto);
+  }
+
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiResponse({
     status: 200,
-    description: 'Token successfully refreshed',
+    description: 'Refresh success',
+    schema: {
+      example: {
+        error: false,
+        code: 200,
+        message: 'Refresh success',
+        data: {
+          accessToken: 'NEW_ACCESS_TOKEN',
+          expiresIn: 900,
+        },
+        traceId: 'REFRESH112',
+      },
+    },
   })
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<AuthResponse> {
+  @ApiResponse({
+    status: 401,
+    description: 'Invalid refresh token',
+  })
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<RefreshTokenResponse> {
     return this.authService.refreshToken(refreshTokenDto.refreshToken);
   }
 

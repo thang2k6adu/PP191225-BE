@@ -24,3 +24,23 @@ export interface AuthResponse {
   refreshToken: string;
   expiredAt: string;
 }
+
+export interface FirebaseLoginResponse {
+  user: {
+    id: string;
+    email: string;
+    name?: string;
+    avatar?: string;
+    role: string;
+  };
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  };
+}
+
+export interface RefreshTokenResponse {
+  accessToken: string;
+  expiresIn: number;
+}
