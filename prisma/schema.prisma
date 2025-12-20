@@ -11,28 +11,31 @@ datasource db {
 }
 
 model User {
-  id          String    @id @default(uuid())
-  email       String    @unique
+  id          String     @id @default(uuid())
+  email       String     @unique
   password    String?
-  firebaseUid String?   @unique
+  firebaseUid String?    @unique
   firstName   String?
   lastName    String?
   avatar      String?
-  role        Role      @default(USER)
-  isActive    Boolean   @default(true)
+  role        Role       @default(USER)
+  status      UserStatus @default(ONLINE)
+  isActive    Boolean    @default(true)
   lastLogin   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   deletedAt   DateTime?
 
   refreshTokens RefreshToken[]
   notifications Notification[]
   files         File[]
   tasks         Task[]
+  roomMembers   RoomMember[]
 
   @@index([email])
   @@index([role])
   @@index([firebaseUid])
+  @@index([status])
   @@map("users")
 }
 
@@ -116,5 +119,57 @@ enum TaskStatus {
   PLANNED
   ACTIVE
   DONE
+}
+
+enum UserStatus {
+  ONLINE
+  MATCHING
+  IN_ROOM
+  OFFLINE
+}
+
+enum RoomType {
+  PUBLIC
+  PRIVATE
+}
+
+enum RoomStatus {
+  WAITING
+  ACTIVE
+  CLOSED
+}
+
+enum RoomMemberStatus {
+  JOINED
+  READY
+  LEFT
+}
+
+model Room {
+  id         String         @id @default(uuid())
+  type       RoomType       @default(PUBLIC)
+  status     RoomStatus     @default(WAITING)
+  maxMembers Int            @default(2)
+  members    RoomMember[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([type, status])
+  @@map("rooms")
+}
+
+model RoomMember {
+  id        String           @id @default(uuid())
+  roomId    String
+  userId    String
+  status    RoomMemberStatus @default(JOINED)
+  joinedAt  DateTime         @default(now())
+  room      Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
+  @@map("room_members")
 }
 
