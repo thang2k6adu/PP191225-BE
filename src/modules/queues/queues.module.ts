@@ -16,12 +16,14 @@ import { NotificationsModule } from '../notifications/notifications.module';
         const redisHost = configService.get<string>('redis.host');
         const redisPort = configService.get<number>('redis.port');
         const redisPassword = configService.get<string>('redis.password');
+        const redisTls = configService.get<boolean>('redis.tls');
 
         return {
           redis: {
             host: redisHost,
             port: redisPort,
             password: redisPassword || undefined,
+            tls: redisTls ? {} : undefined,
           },
         };
       },

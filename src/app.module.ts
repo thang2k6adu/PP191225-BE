@@ -51,13 +51,20 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
         const redisHost = configService.get<string>('redis.host');
         const redisPort = configService.get<number>('redis.port');
         const redisPassword = configService.get<string>('redis.password');
+        const redisTls = configService.get<boolean>('redis.tls');
+
+        const socketOptions: any = {
+          host: redisHost,
+          port: redisPort,
+        };
+
+        if (redisTls) {
+          socketOptions.tls = true;
+        }
 
         return {
           store: await redisStore({
-            socket: {
-              host: redisHost,
-              port: redisPort,
-            },
+            socket: socketOptions,
             password: redisPassword || undefined,
             ttl: 60000, // Default TTL: 60 seconds
           }),
