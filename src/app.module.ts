@@ -20,6 +20,7 @@ import { WebSocketModule } from './modules/websocket/websocket.module';
 import { SearchModule } from './modules/search/search.module';
 import { MonitoringModule } from './modules/monitoring/monitoring.module';
 import { MicroservicesModule } from './modules/microservices/microservices.module';
+import { ExpModule } from './modules/exp/exp.module';
 import { PrismaService } from './database/prisma.service';
 import { DatabaseService } from './database/database.service';
 import { CacheService } from './common/services/cache.service';
@@ -119,6 +120,7 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
     SearchModule,
     MonitoringModule,
     MicroservicesModule,
+    ExpModule,
   ],
   providers: [
     PrismaService,

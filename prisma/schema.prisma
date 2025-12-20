@@ -31,6 +31,7 @@ model User {
   files         File[]
   tasks         Task[]
   roomMembers   RoomMember[]
+  expTrackings  ExpTracking[]
 
   @@index([email])
   @@index([role])
@@ -101,7 +102,8 @@ model Task {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expTrackings ExpTracking[]
 
   @@index([userId])
   @@index([userId, isActive])
@@ -145,6 +147,12 @@ enum RoomMemberStatus {
   LEFT
 }
 
+enum TrackingStatus {
+  active
+  paused
+  stopped
+}
+
 model Room {
   id         String         @id @default(uuid())
   type       RoomType       @default(PUBLIC)
@@ -171,5 +179,25 @@ model RoomMember {
   @@index([roomId])
   @@index([userId])
   @@map("room_members")
+}
+
+model ExpTracking {
+  id             String          @id @default(uuid())
+  taskId         String
+  userId         String
+  startTime      DateTime?
+  accumulatedTime Int            @default(0) // in seconds
+  status         TrackingStatus  @default(active)
+  expEarned      Float?          @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+  @@index([userId, status])
+  @@map("exp_trackings")
 }
 
