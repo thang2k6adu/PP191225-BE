@@ -28,6 +28,7 @@ model User {
   refreshTokens RefreshToken[]
   notifications Notification[]
   files         File[]
+  tasks         Task[]
 
   @@index([email])
   @@index([role])
@@ -86,9 +87,34 @@ model File {
   @@map("files")
 }
 
+model Task {
+  id            String     @id @default(uuid())
+  name          String
+  estimateHours Decimal    @db.Decimal(10, 2)
+  deadline      DateTime
+  status        TaskStatus @default(PLANNED)
+  isActive      Boolean    @default(false)
+  userId        String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([userId, status])
+  @@map("tasks")
+}
+
 enum Role {
   USER
   ADMIN
   MODERATOR
+}
+
+enum TaskStatus {
+  PLANNED
+  ACTIVE
+  DONE
 }
 

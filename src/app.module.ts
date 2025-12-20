@@ -9,6 +9,7 @@ import { redisStore } from 'cache-manager-redis-yet';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
+import { TasksModule } from './modules/tasks/tasks.module';
 import { QueuesModule } from './modules/queues/queues.module';
 import { EventsModule } from './modules/events/events.module';
 import { MailModule } from './modules/mail/mail.module';
@@ -106,6 +107,7 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
     AuthModule,
     UsersModule,
     HealthModule,
+    TasksModule,
     QueuesModule,
     EventsModule,
     MailModule,
