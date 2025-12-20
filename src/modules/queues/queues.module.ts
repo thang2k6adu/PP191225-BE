@@ -33,8 +33,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
               console.log(`Retrying Redis connection (attempt ${times}) in ${delay}ms...`);
               return delay;
             },
-            maxRetriesPerRequest: 3,
-            enableReadyCheck: true,
             lazyConnect: true, // Don't connect immediately, wait for first operation
             reconnectOnError: (err: Error) => {
               const targetError = 'READONLY';

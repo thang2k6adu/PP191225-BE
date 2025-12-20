@@ -8,7 +8,9 @@ services:
       target: production
     container_name: nest-boilerplate-app
     ports:
-      - "3000:3000"
+      - "3001:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/nest_boilerplate?schema=public

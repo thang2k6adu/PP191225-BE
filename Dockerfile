@@ -27,7 +27,11 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install build dependencies for native modules (bcrypt, etc.)
+# Install OpenSSL for Prisma Client and build dependencies for native modules
+# Add edge repository for openssl1.1-compat if needed
+RUN apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main openssl1.1-compat || \
+    apk add --no-cache openssl libc6-compat || \
+    apk add --no-cache openssl
 RUN apk add --no-cache python3 make g++
 
 # Copy package files
@@ -36,7 +40,7 @@ COPY package*.json ./
 # Install production dependencies only
 RUN npm ci --only=production && npm cache clean --force
 
-# Remove build dependencies to reduce image size
+# Remove build dependencies to reduce image size (keep openssl and libc6-compat for Prisma)
 RUN apk del python3 make g++
 
 # Copy built application
