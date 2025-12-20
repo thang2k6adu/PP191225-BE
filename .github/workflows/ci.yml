@@ -49,11 +49,13 @@ jobs:
 
       - name: Generate Prisma Client
         run: npm run prisma:generate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db?schema=public
 
       - name: Run database migrations
         run: npx prisma migrate deploy
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db?schema=public
 
       - name: Run linter
         run: npm run lint:check
@@ -70,9 +72,12 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db?schema=public
           REDIS_HOST: localhost
           REDIS_PORT: 6379
+          JWT_SECRET: test-jwt-secret-key-for-ci
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-key-for-ci
+          NODE_ENV: test
 
       - name: Build
         run: npm run build

@@ -45,25 +45,35 @@ describe('AuthController - Firebase Login (e2e)', () => {
     firebaseService = app.get<FirebaseService>(FirebaseService);
 
     // Clean up test data before starting
-    await prisma.refreshToken.deleteMany({});
-    await prisma.user.deleteMany({
-      where: {
-        email: {
-          in: [
-            'test@example.com',
-            'existing@example.com',
-            'disabled@example.com',
-            'device@example.com',
-            'optional@example.com',
-            'optional1@example.com',
-            'optional2@example.com',
-            'optional3@example.com',
-            'noavatar@example.com',
-            'noname@example.com',
-          ],
+    try {
+      await prisma.refreshToken.deleteMany({});
+    } catch (error) {
+      // Ignore if table doesn't exist yet
+      console.warn('Could not cleanup refreshToken:', error.message);
+    }
+    try {
+      await prisma.user.deleteMany({
+        where: {
+          email: {
+            in: [
+              'test@example.com',
+              'existing@example.com',
+              'disabled@example.com',
+              'device@example.com',
+              'optional@example.com',
+              'optional1@example.com',
+              'optional2@example.com',
+              'optional3@example.com',
+              'noavatar@example.com',
+              'noname@example.com',
+            ],
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      // Ignore if table doesn't exist yet
+      console.warn('Could not cleanup user:', error.message);
+    }
   });
 
   afterEach(() => {
@@ -73,25 +83,35 @@ describe('AuthController - Firebase Login (e2e)', () => {
 
   afterAll(async () => {
     // Clean up test data
-    await prisma.refreshToken.deleteMany({});
-    await prisma.user.deleteMany({
-      where: {
-        email: {
-          in: [
-            'test@example.com',
-            'existing@example.com',
-            'disabled@example.com',
-            'device@example.com',
-            'optional@example.com',
-            'optional1@example.com',
-            'optional2@example.com',
-            'optional3@example.com',
-            'noavatar@example.com',
-            'noname@example.com',
-          ],
+    try {
+      await prisma.refreshToken.deleteMany({});
+    } catch (error) {
+      // Ignore if table doesn't exist
+      console.warn('Could not cleanup refreshToken:', error.message);
+    }
+    try {
+      await prisma.user.deleteMany({
+        where: {
+          email: {
+            in: [
+              'test@example.com',
+              'existing@example.com',
+              'disabled@example.com',
+              'device@example.com',
+              'optional@example.com',
+              'optional1@example.com',
+              'optional2@example.com',
+              'optional3@example.com',
+              'noavatar@example.com',
+              'noname@example.com',
+            ],
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      // Ignore if table doesn't exist
+      console.warn('Could not cleanup user:', error.message);
+    }
     await app.close();
   });
 
