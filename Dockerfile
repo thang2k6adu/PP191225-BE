@@ -40,9 +40,9 @@ COPY --from=builder /app/prisma ./prisma
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nestjs -u 1001
 
-# Create logs directory and set permissions BEFORE switching user
-RUN mkdir -p /app/logs && \
-    chown -R nestjs:nodejs /app/logs
+# Create logs and uploads directories and set permissions BEFORE switching user
+RUN mkdir -p /app/logs /app/uploads && \
+    chown -R nestjs:nodejs /app/logs /app/uploads
 
 USER nestjs
 
