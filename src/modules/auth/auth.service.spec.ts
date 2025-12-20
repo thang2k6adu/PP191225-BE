@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { PrismaService } from '@/database/prisma.service';
+import { FirebaseService } from './services/firebase.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -11,6 +12,8 @@ describe('AuthService', () => {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
     },
     refreshToken: {
       findUnique: jest.fn(),
@@ -37,6 +40,10 @@ describe('AuthService', () => {
     }),
   };
 
+  const mockFirebaseService = {
+    verifyIdToken: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -52,6 +59,10 @@ describe('AuthService', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: FirebaseService,
+          useValue: mockFirebaseService,
         },
       ],
     }).compile();
