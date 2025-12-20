@@ -56,19 +56,47 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
         const socketOptions: any = {
           host: redisHost,
           port: redisPort,
+          reconnectStrategy: (retries: number) => {
+            if (retries > 10) {
+              console.error('Redis connection failed after 10 retries');
+              return new Error('Redis connection failed');
+            }
+            const delay = Math.min(retries * 100, 3000);
+            console.log(`Retrying Redis connection (attempt ${retries}) in ${delay}ms...`);
+            return delay;
+          },
         };
 
         if (redisTls) {
           socketOptions.tls = true;
         }
 
-        return {
-          store: await redisStore({
+        try {
+          const store = await redisStore({
             socket: socketOptions,
             password: redisPassword || undefined,
             ttl: 60000, // Default TTL: 60 seconds
-          }),
-        };
+          });
+
+          // Handle connection errors
+          const client = (store as any).client;
+          if (client) {
+            client.on('error', (err: Error) => {
+              console.error('Redis connection error:', err.message);
+            });
+            client.on('connect', () => {
+              console.log('✅ Redis cache connected');
+            });
+            client.on('reconnecting', () => {
+              console.log('🔄 Redis reconnecting...');
+            });
+          }
+
+          return { store, ttl: 60000 };
+        } catch (error) {
+          console.error('Failed to initialize Redis store:', error.message);
+          throw error;
+        }
       },
       inject: [ConfigService],
       isGlobal: true,

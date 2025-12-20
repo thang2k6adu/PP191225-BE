@@ -24,6 +24,25 @@ import { NotificationsModule } from '../notifications/notifications.module';
             port: redisPort,
             password: redisPassword || undefined,
             tls: redisTls ? {} : undefined,
+            retryStrategy: (times: number) => {
+              if (times > 10) {
+                console.error('Redis connection failed after 10 retries');
+                return null; // Stop retrying
+              }
+              const delay = Math.min(times * 100, 3000);
+              console.log(`Retrying Redis connection (attempt ${times}) in ${delay}ms...`);
+              return delay;
+            },
+            maxRetriesPerRequest: 3,
+            enableReadyCheck: true,
+            lazyConnect: true, // Don't connect immediately, wait for first operation
+            reconnectOnError: (err: Error) => {
+              const targetError = 'READONLY';
+              if (err.message.includes(targetError)) {
+                return true; // Reconnect on READONLY error
+              }
+              return false;
+            },
           },
         };
       },
