@@ -13,13 +13,13 @@ dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.PORT = process.env.PORT || '3000';
 
-// DATABASE_URL should be loaded from .env - don't override if already set
-if (!process.env.DATABASE_URL) {
-  console.warn(
-    '⚠️  DATABASE_URL not set. E2E tests require a database connection.',
-    'Please set DATABASE_URL in your .env file.',
-  );
-  process.env.DATABASE_URL = 'postgresql://user:password@localhost:5432/test_db?schema=public';
+// Override DATABASE_URL for E2E tests to use local database
+// This ensures tests use the local database instead of production/cloud database
+if (!process.env.DATABASE_URL_TEST) {
+  process.env.DATABASE_URL =
+    'postgresql://postgres:postgres@localhost:5432/nest_boilerplate?schema=public';
+} else {
+  process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
 }
 
 // JWT Configuration (required)
