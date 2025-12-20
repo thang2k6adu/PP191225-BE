@@ -96,26 +96,40 @@ describe('ExpController (e2e)', () => {
   afterAll(async () => {
     // Clean up test data
     try {
-      await prisma.expTracking.deleteMany({
-        where: {
-          userId,
-        },
-      });
-      await prisma.task.deleteMany({
-        where: {
-          userId,
-        },
-      });
-      await prisma.user.deleteMany({
-        where: {
-          email: 'test-exp@example.com',
-        },
-      });
+      if (prisma) {
+        await prisma.expTracking.deleteMany({
+          where: {
+            userId,
+          },
+        });
+        await prisma.task.deleteMany({
+          where: {
+            userId,
+          },
+        });
+        await prisma.user.deleteMany({
+          where: {
+            email: 'test-exp@example.com',
+          },
+        });
+      }
     } catch (error) {
-      // Ignore
+      // Ignore cleanup errors
     }
-    await app.close();
-  });
+
+    // Close Prisma connection first
+    if (prisma) {
+      await prisma.$disconnect();
+    }
+
+    // Close app (this will close all connections including Redis)
+    if (app) {
+      await app.close();
+    }
+
+    // Give time for connections to close gracefully
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }, 30000);
 
   describe('POST /api/exp/start', () => {
     it('should start tracking a task', () => {
@@ -311,6 +325,28 @@ describe('ExpController (e2e)', () => {
         });
 
       newTaskId = taskResponse.body.data.id;
+    });
+
+    afterAll(async () => {
+      // Clean up the new task created for full flow test
+      try {
+        if (prisma && newTaskId) {
+          await prisma.expTracking.deleteMany({
+            where: {
+              taskId: newTaskId,
+            },
+          });
+          await prisma.task
+            .delete({
+              where: { id: newTaskId },
+            })
+            .catch(() => {
+              // Ignore if already deleted
+            });
+        }
+      } catch (error) {
+        // Ignore cleanup errors
+      }
     });
 
     it('should complete full tracking flow', async () => {
