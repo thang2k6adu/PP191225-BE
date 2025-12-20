@@ -13,12 +13,18 @@ dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.PORT = process.env.PORT || '3000';
 
-// Override DATABASE_URL for E2E tests to use local database
-// This ensures tests use the local database instead of production/cloud database
-if (!process.env.DATABASE_URL_TEST) {
+// Override DATABASE_URL for E2E tests
+// Priority (highest to lowest):
+//   1. DATABASE_URL_TEST - explicit test database URL
+//   2. DATABASE_URL - from environment (e.g., set by CI/CD)
+//   3. Default - local development database
+// This allows CI to override the database URL while keeping a sensible default for local dev
+if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL =
     'postgresql://postgres:postgres@localhost:5432/nest_boilerplate?schema=public';
-} else {
+}
+// If DATABASE_URL_TEST is provided, use it (highest priority)
+if (process.env.DATABASE_URL_TEST) {
   process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
 }
 
