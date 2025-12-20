@@ -11,6 +11,5 @@
   },
   "setupFilesAfterEnv": ["<rootDir>/setup-e2e.ts"],
   "testTimeout": 30000,
-  "maxWorkers": 1,
-  "forceExit": true
+  "maxWorkers": 1
 }
