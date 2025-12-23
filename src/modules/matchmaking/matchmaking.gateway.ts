@@ -207,8 +207,14 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
    * Send MATCH_FOUND event to both users
    * Called by controller when match is created
    */
-  sendMatchFound(userId: string, opponentId: string, matchData: MatchFoundDto) {
-    // Send to first user
+  sendMatchFound(
+    userId: string,
+    userName: string,
+    opponentId: string,
+    opponentName: string | undefined,
+    matchData: MatchFoundDto,
+  ) {
+    // Send to first user (current user who just joined)
     this.server.to(`user:${userId}`).emit('match_found', {
       roomId: matchData.roomId,
       opponentId: matchData.opponentId,
@@ -216,10 +222,11 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
       message: 'Match found!',
     });
 
-    // Send to opponent
+    // Send to opponent (user who was waiting in queue)
     this.server.to(`user:${opponentId}`).emit('match_found', {
       roomId: matchData.roomId,
       opponentId: userId,
+      opponentName: userName,
       message: 'Match found!',
     });
 

@@ -84,11 +84,17 @@ export class MatchmakingController {
 
     if (result.matched) {
       // Match found! Send WebSocket events to both users
-      this.matchmakingGateway.sendMatchFound(user.id, result.opponentId!, {
-        roomId: result.roomId!,
-        opponentId: result.opponentId!,
-        opponentName: result.opponentName,
-      });
+      this.matchmakingGateway.sendMatchFound(
+        user.id,
+        userName,
+        result.opponentId!,
+        result.opponentName,
+        {
+          roomId: result.roomId!,
+          opponentId: result.opponentId!,
+          opponentName: result.opponentName,
+        },
+      );
 
       return {
         status: 'MATCHED',
