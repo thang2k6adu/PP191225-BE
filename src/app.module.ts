@@ -11,6 +11,7 @@ import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
+import { MatchmakingModule } from './modules/matchmaking/matchmaking.module';
 import { QueuesModule } from './modules/queues/queues.module';
 import { EventsModule } from './modules/events/events.module';
 import { MailModule } from './modules/mail/mail.module';
@@ -146,6 +147,7 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
     HealthModule,
     TasksModule,
     RoomsModule,
+    MatchmakingModule,
     QueuesModule,
     EventsModule,
     MailModule,
