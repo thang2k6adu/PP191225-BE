@@ -19,9 +19,6 @@ import { MatchFoundDto } from './dto/match-found.dto';
  * Handles WebSocket connections and events for matchmaking
  */
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-  },
   namespace: '/matchmaking',
 })
 export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconnect {

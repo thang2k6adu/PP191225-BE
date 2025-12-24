@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { SocketIoAdapter } from './common/adapters/socket-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -13,14 +14,20 @@ async function bootstrap() {
   // Security
   app.use(helmet());
 
-  // CORS
+  // CORS configuration
+  const corsOrigin =
+    configService.get<string>('app.nodeEnv') === 'production'
+      ? process.env.CORS_ORIGIN?.split(',') || []
+      : ['http://localhost:5173', 'http://localhost:3000'];
+
+  // HTTP CORS
   app.enableCors({
-    origin:
-      configService.get<string>('app.nodeEnv') === 'production'
-        ? process.env.CORS_ORIGIN?.split(',') || []
-        : true,
+    origin: corsOrigin,
     credentials: true,
   });
+
+  // WebSocket CORS (Global for all Socket.IO gateways)
+  app.useWebSocketAdapter(new SocketIoAdapter(app, configService));
 
   // Global prefix
   app.setGlobalPrefix('api');

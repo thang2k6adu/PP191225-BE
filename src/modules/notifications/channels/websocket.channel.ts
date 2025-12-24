@@ -4,9 +4,6 @@ import { Server } from 'socket.io';
 
 @Injectable()
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-  },
   namespace: '/notifications',
 })
 export class WebsocketChannel {

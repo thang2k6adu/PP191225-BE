@@ -13,9 +13,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-  },
   namespace: '/',
 })
 export class AppWebSocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
