@@ -16,6 +16,8 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/nest_boilerplate?schema=public
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_TLS=false
     depends_on:
       - db
       - redis

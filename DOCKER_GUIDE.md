@@ -484,6 +484,9 @@ FIREBASE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY\n-----END PRI
 #### Chạy Production Mode
 
 ```bash
+# Đóng container đang chạy
+docker stop $(docker ps -q) && docker rm $(docker ps -aq)
+
 # Build và start tất cả services
 docker-compose up -d
 
