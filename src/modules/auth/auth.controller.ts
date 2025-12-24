@@ -33,9 +33,18 @@ export class AuthController {
         code: 0,
         message: 'Success',
         data: {
-          accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-          refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-          expiredAt: '2025-09-29T08:08:14.822Z',
+          user: {
+            id: 'user_123',
+            email: 'test@example.com',
+            firstName: 'John',
+            lastName: 'Doe',
+            role: 'USER',
+          },
+          tokens: {
+            accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            expiresIn: 7200,
+          },
         },
         traceId: 'VIHOLaKaWe',
       },
@@ -59,9 +68,18 @@ export class AuthController {
         code: 0,
         message: 'Success',
         data: {
-          accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-          refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-          expiredAt: '2025-09-29T08:08:14.822Z',
+          user: {
+            id: 'user_123',
+            email: 'test@example.com',
+            firstName: 'John',
+            lastName: 'Doe',
+            role: 'USER',
+          },
+          tokens: {
+            accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+            expiresIn: 7200,
+          },
         },
         traceId: 'VIHOLaKaWe',
       },
@@ -91,7 +109,8 @@ export class AuthController {
           user: {
             id: 'user_123',
             email: 'test@gmail.com',
-            name: 'Nguyen Van A',
+            firstName: 'Nguyen Van',
+            lastName: 'A',
             avatar: 'https://avatar.url',
             role: 'user',
           },

@@ -20,16 +20,27 @@ export interface PaginatedResponse<T> {
 }
 
 export interface AuthResponse {
-  accessToken: string;
-  refreshToken: string;
-  expiredAt: string;
+  user: {
+    id: string;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    avatar?: string;
+    role: string;
+  };
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  };
 }
 
 export interface FirebaseLoginResponse {
   user: {
     id: string;
     email: string;
-    name?: string;
+    firstName?: string | null;
+    lastName?: string | null;
     avatar?: string;
     role: string;
   };

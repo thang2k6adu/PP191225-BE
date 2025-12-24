@@ -123,11 +123,9 @@ export class AuthService {
         isActive: user.isActive,
       });
 
-      const expiresIn = this.parseExpiresIn(this.configService.get<string>('jwt.expiresIn'));
-
       return {
-        accessToken: tokens.accessToken,
-        expiresIn,
+        accessToken: tokens.tokens.accessToken,
+        expiresIn: tokens.tokens.expiresIn,
       };
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -275,20 +273,20 @@ export class AuthService {
 
     // Generate tokens
     const tokens = await this.generateTokens(user);
-    const expiresIn = this.parseExpiresIn(this.configService.get<string>('jwt.expiresIn'));
 
     return {
       user: {
         id: user.id,
         email: user.email,
-        name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
         avatar: user.avatar || undefined,
         role: user.role,
       },
       tokens: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresIn,
+        accessToken: tokens.tokens.accessToken,
+        refreshToken: tokens.tokens.refreshToken,
+        expiresIn: tokens.tokens.expiresIn,
       },
     };
   }
@@ -328,7 +326,6 @@ export class AuthService {
 
     const expiresIn = this.configService.get<string>('jwt.expiresIn');
     const expiresInSeconds = this.parseExpiresIn(expiresIn);
-    const expiredAt = new Date(Date.now() + expiresInSeconds * 1000);
 
     // Store refresh token in database
     await this.prisma.refreshToken.create({
@@ -343,9 +340,19 @@ export class AuthService {
     });
 
     return {
-      accessToken,
-      refreshToken,
-      expiredAt: expiredAt.toISOString(),
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
+        avatar: user.avatar || undefined,
+        role: user.role,
+      },
+      tokens: {
+        accessToken,
+        refreshToken,
+        expiresIn: expiresInSeconds,
+      },
     };
   }
 
