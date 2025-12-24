@@ -59,7 +59,7 @@ async function bootstrap() {
           description: 'Enter JWT token',
           in: 'header',
         },
-        'JWT-auth',
+        'bearer', // Changed from 'JWT-auth' to match @ApiBearerAuth() default
       )
       .build();
 

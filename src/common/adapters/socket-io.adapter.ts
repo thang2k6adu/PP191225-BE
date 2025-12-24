@@ -15,7 +15,7 @@ export class SocketIoAdapter extends IoAdapter {
     const corsOrigin =
       this.configService.get<string>('app.nodeEnv') === 'production'
         ? process.env.CORS_ORIGIN?.split(',') || []
-        : ['http://localhost:5173', 'http://localhost:3000'];
+        : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'];
 
     const serverOptions: ServerOptions = {
       ...options,
