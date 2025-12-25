@@ -13,7 +13,7 @@ Hệ thống tracking mới cho phép:
 
 ---
 
-## � User Flow (Luồng Người Dùng)
+## 🎯 User Flow (Luồng Người Dùng)
 
 ### Recommended Flow
 
@@ -22,17 +22,21 @@ Hệ thống tracking mới cho phép:
    ↓
 2. Matchmaking (Tìm phòng/đối thủ)
    ↓
-3. Chọn Task để làm
+3. Match Found! → Hiển thị Task Selection Dialog
    ↓
-4. Activate Task (Bắt đầu tracking)
+4. User chọn Task từ danh sách
    ↓
-5. Làm việc (có thể Pause/Resume)
+5. Activate Task (Bắt đầu tracking tự động)
    ↓
-6. Stop Session (Kết thúc)
+6. Vào Room Screen (Task info hiển thị ở header/sidebar)
    ↓
-7. Xem kết quả (Progress, EXP earned)
+7. Làm việc trong room (có thể Pause/Resume)
    ↓
-8. Quay lại Matchmaking hoặc chọn Task khác
+8. Stop Session (Kết thúc)
+   ↓
+9. Xem kết quả (Progress, EXP earned)
+   ↓
+10. Quay lại Matchmaking hoặc chọn Task khác
 ```
 
 ### Detailed Flow
@@ -45,28 +49,69 @@ const matchResult = await joinMatchmaking();
 
 // Khi tìm được phòng/đối thủ
 if (matchResult.success) {
-  // Chuyển sang màn hình chọn task
-  navigateToTaskSelection();
+  // Hiển thị dialog chọn task NGAY LẬP TỨC
+  showTaskSelectionDialog();
 }
 ```
 
-#### Step 2: Task Selection
+#### Step 2: Task Selection Dialog
 
 ```typescript
-// Hiển thị danh sách tasks
+// Fetch danh sách tasks của user
 const tasks = await fetchUserTasks();
 
-// User chọn task muốn làm
-const selectedTask = await showTaskSelectionDialog(tasks);
+// Hiển thị dialog với danh sách tasks
+const selectedTask = await showTaskSelectionDialog({
+  tasks: tasks,
+  title: 'Chọn Task để làm việc',
+  description: 'Bạn đã tìm được phòng! Hãy chọn task muốn làm.',
+});
 
-// Activate task đã chọn
+// User chọn task
 if (selectedTask) {
-  await activateTask(selectedTask.id);
-  // Bắt đầu tracking session tự động
+  // Activate task (tự động tạo tracking session)
+  const result = await activateTask(selectedTask.id);
+
+  // Lưu thông tin để hiển thị trong room
+  saveActiveTaskToState(result.data.task);
+  saveActiveSessionToState(result.data.session);
+
+  // Chuyển vào room screen
+  navigateToRoomScreen({
+    roomId: matchResult.roomId,
+    task: result.data.task,
+    session: result.data.session,
+  });
 }
 ```
 
-#### Step 3: Working Session
+#### Step 3: Room Screen với Task Info
+
+```typescript
+// Room screen hiển thị:
+// 1. Room info (members, chat, etc.)
+// 2. Task info (ở header, sidebar, hoặc floating card)
+
+function RoomScreen({ roomId, task, session }) {
+  return (
+    <div className="room-screen">
+      {/* Task Info Header/Sidebar */}
+      <TaskInfoPanel
+        task={task}
+        session={session}
+        onPause={handlePause}
+        onResume={handleResume}
+        onStop={handleStop}
+      />
+
+      {/* Room Content */}
+      <RoomContent roomId={roomId} />
+    </div>
+  );
+}
+```
+
+#### Step 4: Working Session trong Room
 
 ```typescript
 // Session đang active, user có thể:
@@ -83,21 +128,23 @@ showSessionSummary({
   expEarned: result.expEarned,
   taskProgress: updatedTask.progress,
 });
+
+// Có thể ở lại room hoặc rời phòng
 ```
 
-#### Step 4: Next Action
+#### Step 5: Next Action
 
 ```typescript
 // Sau khi stop session, user có thể:
 
-// Option 1: Tiếp tục matchmaking
-await joinMatchmaking();
+// Option 1: Tiếp tục ở trong room (không tracking)
+await stayInRoom();
 
-// Option 2: Chọn task khác
+// Option 2: Rời phòng và matchmaking lại
+await leaveRoomAndMatchmaking();
+
+// Option 3: Chọn task khác và tiếp tục tracking
 await selectAnotherTask();
-
-// Option 3: Kết thúc
-await logout();
 ```
 
 ### UI Flow Diagram
@@ -113,32 +160,114 @@ await logout();
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
-│              TASK SELECTION SCREEN                      │
-│  ○ Task 1: Implement Login (8h) - 25% done             │
-│  ○ Task 2: Fix Bug #123 (2h) - 0% done                 │
-│  ○ Task 3: Setup Database (4h) - 100% done ✓           │
-│                                                         │
-│  [Select Task to Start Working]                        │
+│          TASK SELECTION DIALOG (Popup)                  │
+│  ┌───────────────────────────────────────────────────┐ │
+│  │ 🎯 Chọn Task để làm việc                          │ │
+│  │                                                   │ │
+│  │ ○ Task 1: Implement Login (8h) - 25% done        │ │
+│  │   ⏱ 2h spent | 📊 Progress: ████░░░░░░           │ │
+│  │                                                   │ │
+│  │ ○ Task 2: Fix Bug #123 (2h) - 0% done            │ │
+│  │   ⏱ 0h spent | 📊 Progress: ░░░░░░░░░░           │ │
+│  │                                                   │ │
+│  │ ○ Task 3: Setup DB (4h) - 100% done ✓            │ │
+│  │   ⏱ 4h spent | 📊 Progress: ██████████           │ │
+│  │                                                   │ │
+│  │           [Confirm Selection]                     │ │
+│  └───────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
-│               WORKING SCREEN                            │
-│  Task: Implement Login                                  │
-│  ⏱ Timer: 01:23:45                                      │
-│  📊 Progress: ████████░░ 35%                            │
+│               ROOM SCREEN (with Task Info)              │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ 📋 Task: Implement Login        ⏱ 01:23:45     │   │
+│  │ 📊 Progress: ████████░░ 35%     [⏸ Pause] [⏹]  │   │
+│  └─────────────────────────────────────────────────┘   │
 │                                                         │
-│  [Pause] [Stop Session]                                │
+│  Room Members:                                          │
+│  • You (Ready)                                          │
+│  • Partner (Ready)                                      │
+│                                                         │
+│  [Chat/Collaboration Area]                              │
+│                                                         │
+│  [Leave Room]                                           │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
-│             SESSION SUMMARY                             │
+│             SESSION SUMMARY (Dialog)                    │
 │  ✅ Session Completed!                                  │
 │  ⏱ Duration: 1h 23m                                     │
 │  🏆 EXP Earned: 4,980 seconds                           │
 │  📊 Task Progress: 35% → 52%                            │
 │                                                         │
-│  [Back to Matchmaking] [Select Another Task]           │
+│  [Stay in Room] [Leave & Matchmaking] [New Task]       │
 └─────────────────────────────────────────────────────────┘
+```
+
+### Task Info Display Options
+
+Có 3 cách hiển thị task info trong room screen:
+
+#### Option 1: Header Bar (Recommended)
+
+```typescript
+<div className="room-header">
+  <div className="task-info">
+    <span className="task-name">📋 {task.name}</span>
+    <span className="timer">⏱ {formatTime(currentTime)}</span>
+    <span className="progress">📊 {task.progress.toFixed(1)}%</span>
+  </div>
+  <div className="task-controls">
+    <button onClick={onPause}>⏸ Pause</button>
+    <button onClick={onStop}>⏹ Stop</button>
+  </div>
+</div>
+```
+
+#### Option 2: Sidebar Panel
+
+```typescript
+<div className="room-layout">
+  <aside className="task-sidebar">
+    <h3>Current Task</h3>
+    <div className="task-details">
+      <p>{task.name}</p>
+      <div className="progress-bar">
+        <div style={{ width: `${task.progress}%` }} />
+      </div>
+      <p>Time: {formatTime(currentTime)}</p>
+      <p>Progress: {task.progress.toFixed(1)}%</p>
+      <button onClick={onPause}>Pause</button>
+      <button onClick={onStop}>Stop</button>
+    </div>
+  </aside>
+  <main className="room-content">
+    {/* Room content */}
+  </main>
+</div>
+```
+
+#### Option 3: Floating Card
+
+```typescript
+<div className="floating-task-card">
+  <div className="card-header">
+    <span>📋 {task.name}</span>
+    <button onClick={toggleMinimize}>−</button>
+  </div>
+  {!minimized && (
+    <div className="card-body">
+      <p>⏱ {formatTime(currentTime)}</p>
+      <div className="progress-bar">
+        <div style={{ width: `${task.progress}%` }} />
+      </div>
+      <div className="controls">
+        <button onClick={onPause}>⏸</button>
+        <button onClick={onStop}>⏹</button>
+      </div>
+    </div>
+  )}
+</div>
 ```
 
 ### Implementation Example
@@ -154,44 +283,65 @@ class TaskTrackingApp {
     const matchResult = await this.matchmaking();
 
     if (matchResult.success) {
-      // 3. Task Selection
-      await this.showTaskSelection();
+      // 3. Show Task Selection Dialog
+      await this.showTaskSelectionDialog(matchResult.roomId);
     }
   }
 
-  async showTaskSelection() {
+  async showTaskSelectionDialog(roomId: string) {
+    // Fetch user's tasks
     const tasks = await this.fetchTasks();
-    const selectedTask = await this.showTaskDialog(tasks);
 
-    if (selectedTask) {
-      // 4. Activate and start tracking
-      await this.startWorkingSession(selectedTask.id);
-    }
-  }
-
-  async startWorkingSession(taskId: string) {
-    // Activate task
-    const result = await activateTask(taskId);
-
-    // Show working screen with timer
-    this.showWorkingScreen({
-      task: result.task,
-      session: result.session,
+    // Show dialog
+    const selectedTask = await this.showTaskDialog({
+      tasks: tasks,
+      title: 'Chọn Task để làm việc',
+      description: 'Bạn đã tìm được phòng! Hãy chọn task muốn làm.',
     });
 
-    // Wait for user to stop
-    await this.waitForSessionEnd();
+    if (selectedTask) {
+      // 4. Activate task and start tracking
+      const result = await activateTask(selectedTask.id);
 
-    // Show summary
-    await this.showSessionSummary();
+      // 5. Navigate to room screen with task info
+      await this.navigateToRoom({
+        roomId: roomId,
+        task: result.task,
+        session: result.session,
+      });
+    }
+  }
+
+  async navigateToRoom({ roomId, task, session }) {
+    // Show room screen with task info in header/sidebar
+    this.showRoomScreen({
+      roomId: roomId,
+      task: task,
+      session: session,
+    });
+
+    // Task info is displayed in room header/sidebar
+    // User can pause/resume/stop from within the room
+  }
+
+  async handleStopSession(sessionId: string) {
+    // Stop the session
+    const result = await stopSession(sessionId);
+
+    // Show summary dialog
+    await this.showSessionSummary(result);
 
     // Ask for next action
     const nextAction = await this.askNextAction();
 
-    if (nextAction === 'matchmaking') {
+    if (nextAction === 'stayInRoom') {
+      // Stay in room without tracking
+      return;
+    } else if (nextAction === 'leaveAndMatch') {
+      await this.leaveRoom();
       await this.matchmaking();
-    } else if (nextAction === 'selectTask') {
-      await this.showTaskSelection();
+    } else if (nextAction === 'newTask') {
+      await this.showTaskSelectionDialog(this.currentRoomId);
     }
   }
 }
@@ -200,10 +350,11 @@ class TaskTrackingApp {
 ### Important Rules
 
 1. **Matchmaking First**: User phải join matchmaking trước khi chọn task
-2. **One Active Task**: Chỉ 1 task active tại một thời điểm
-3. **Task Selection Required**: User phải chọn task trước khi bắt đầu tracking
-4. **Session Management**: Mỗi lần activate tạo session mới
-5. **Clear Flow**: Luôn có next action rõ ràng sau mỗi bước
+2. **Dialog After Match**: Task selection dialog hiển thị NGAY sau khi tìm được phòng
+3. **One Active Task**: Chỉ 1 task active tại một thời điểm
+4. **Task in Room**: Task info hiển thị trong room screen (header/sidebar/floating)
+5. **Session Management**: Mỗi lần activate tạo session mới
+6. **Clear Flow**: Luôn có next action rõ ràng sau mỗi bước
 
 ---
 
@@ -1104,6 +1255,13 @@ Nếu có vấn đề hoặc câu hỏi:
 ---
 
 ## 🔄 Changelog
+
+### Version 1.1.0 (2025-12-25)
+
+- ✅ **New Matchmaking Flow**: Task selection dialog appears after match found
+- ✅ **Task Display in Room**: Task info displayed in room screen (header/sidebar/floating options)
+- ✅ **Progress Fields**: All task endpoints now return `progress` and `totalTimeSpent`
+- ✅ **Improved Flow**: Matchmaking → Task Selection Dialog → Room Screen → Session Summary
 
 ### Version 1.0.0 (2025-12-25)
 
