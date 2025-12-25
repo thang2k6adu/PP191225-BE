@@ -71,6 +71,9 @@ export class TrackingService {
 
     // Stop each session and update task progress
     for (const session of activeSessions) {
+      const task = session.task;
+      const previousProgress = task.progress;
+
       // Calculate duration
       const duration = Math.floor((now.getTime() - session.startTime.getTime()) / 1000);
 
@@ -81,11 +84,12 @@ export class TrackingService {
           endTime: now,
           duration,
           status: SessionStatus.stopped,
+          expEarned: duration,
+          previousProgress: previousProgress,
         },
       });
 
       // Update task totalTimeSpent and progress
-      const task = session.task;
       const newTotalTimeSpent = task.totalTimeSpent + duration;
       const estimatedSeconds = Number(task.estimateHours) * 3600;
       const newProgress = Math.min((newTotalTimeSpent / estimatedSeconds) * 100, 100);
@@ -95,6 +99,8 @@ export class TrackingService {
         data: {
           totalTimeSpent: newTotalTimeSpent,
           progress: newProgress,
+          isActive: false,
+          status: TaskStatus.PLANNED,
         },
       });
     }
@@ -215,6 +221,7 @@ export class TrackingService {
 
     // Calculate new task progress
     const task = session.task;
+    const previousProgress = task.progress;
     const newTotalTimeSpent = task.totalTimeSpent + duration;
     const estimatedSeconds = Number(task.estimateHours) * 3600;
     const newProgress = Math.min((newTotalTimeSpent / estimatedSeconds) * 100, 100);
@@ -232,6 +239,7 @@ export class TrackingService {
           duration,
           status: SessionStatus.stopped,
           expEarned: expEarned,
+          previousProgress: previousProgress,
         },
         select: {
           id: true,
@@ -242,6 +250,7 @@ export class TrackingService {
           duration: true,
           status: true,
           expEarned: true,
+          previousProgress: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -253,6 +262,8 @@ export class TrackingService {
         data: {
           totalTimeSpent: newTotalTimeSpent,
           progress: newProgress,
+          isActive: false,
+          status: TaskStatus.PLANNED,
         },
       });
 
@@ -261,7 +272,10 @@ export class TrackingService {
         await this.tasksService.checkAndCompleteIfNeeded(session.taskId, newProgress, tx);
       }
 
-      return updatedSession;
+      return {
+        ...updatedSession,
+        progress: newProgress,
+      };
     });
 
     return result;
@@ -304,6 +318,7 @@ export class TrackingService {
         duration: true,
         status: true,
         expEarned: true,
+        previousProgress: true,
         createdAt: true,
       },
     });

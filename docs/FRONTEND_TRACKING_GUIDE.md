@@ -403,6 +403,7 @@ interface TrackingSession {
   duration: number; // Seconds (chỉ có khi endTime != null)
   status: 'active' | 'paused' | 'stopped';
   expEarned: number; // Seconds của session
+  previousProgress: number; // Progress prior to session update
   createdAt: string;
   updatedAt: string;
 }
@@ -737,6 +738,8 @@ async function resumeSession(sessionId: string) {
     "duration": 1800,           // 30 minutes = 1800 seconds
     "status": "stopped",
     "expEarned": 1800,          // 1800 seconds
+    "previousProgress": 30,     // Progress before update
+    "progress": 45.5,           // Current task progress
     "createdAt": "2025-12-25T10:00:00.000Z",
     "updatedAt": "2025-12-25T10:30:00.000Z"
   }
@@ -830,6 +833,7 @@ async function stopSession(sessionId: string) {
         "duration": 7200,                 // 2 hours
         "status": "stopped",
         "expEarned": 7200,                // 7200 seconds
+        "previousProgress": 10,
         "createdAt": "2025-12-25T08:00:00.000Z"
       },
       {
@@ -839,6 +843,7 @@ async function stopSession(sessionId: string) {
         "duration": 3600,                 // 1 hour
         "status": "stopped",
         "expEarned": 3600,                // 3600 seconds
+        "previousProgress": 25,
         "createdAt": "2025-12-25T11:00:00.000Z"
       }
     ],
