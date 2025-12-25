@@ -144,19 +144,42 @@ export class TasksController {
 
   @Post(':id/activate')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Activate a task (CORE API)' })
+  @ApiOperation({
+    summary: 'Activate a task and start/resume time tracking',
+    description:
+      'Activates a task, deactivates all other tasks, pauses their trackings, and creates or resumes tracking for this task. Only one task can be active at a time per user.',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Task activated',
+    description: 'Task activated and tracking started/resumed',
     schema: {
       example: {
         error: false,
         code: 0,
         message: 'Task activated',
         data: {
-          id: 'task-id',
-          status: 'ACTIVE',
-          isActive: true,
+          task: {
+            id: 'task-id',
+            name: 'Build authentication module',
+            estimateHours: 6,
+            deadline: '2025-12-30T00:00:00.000Z',
+            status: 'ACTIVE',
+            isActive: true,
+            userId: 'user-id',
+            createdAt: '2025-12-20T03:00:00.000Z',
+            updatedAt: '2025-12-24T15:30:00.000Z',
+          },
+          tracking: {
+            id: 'tracking-id',
+            taskId: 'task-id',
+            userId: 'user-id',
+            startTime: '2025-12-24T15:30:00.000Z',
+            accumulatedTime: 0,
+            status: 'active',
+            expEarned: 0,
+            createdAt: '2025-12-24T15:30:00.000Z',
+            updatedAt: '2025-12-24T15:30:00.000Z',
+          },
         },
         traceId: 'activate456',
       },
@@ -164,7 +187,10 @@ export class TasksController {
   })
   @ApiResponse({ status: 404, description: 'Task not found' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  @ApiResponse({ status: 400, description: 'Cannot activate completed task' })
+  @ApiResponse({
+    status: 400,
+    description: 'Cannot activate completed task or resume stopped tracking',
+  })
   activate(@Param('id') id: string, @CurrentUser() user: any) {
     return this.tasksService.activate(id, user.id);
   }

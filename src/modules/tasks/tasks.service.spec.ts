@@ -1,34 +1,41 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TasksService } from './tasks.service';
 import { PrismaService } from '@/database/prisma.service';
+import { TrackingService } from '../tracking/tracking.service';
 import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { TaskStatus } from '@prisma/client';
 
 describe('TasksService', () => {
   let service: TasksService;
-
-  const mockPrismaService = {
-    task: {
-      create: jest.fn(),
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      findFirst: jest.fn(),
-      update: jest.fn(),
-      updateMany: jest.fn(),
-      delete: jest.fn(),
-      count: jest.fn(),
-    },
-    $transaction: jest.fn(),
-  };
+  let mockPrismaService: any;
+  let mockTrackingService: any;
 
   beforeEach(async () => {
+    mockPrismaService = {
+      task: {
+        create: jest.fn(),
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+        delete: jest.fn(),
+        count: jest.fn(),
+      },
+      $transaction: jest.fn(),
+    };
+
+    mockTrackingService = {
+      stopAllActiveSessions: jest.fn(),
+      createSession: jest.fn(),
+      checkAndCompleteIfNeeded: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TasksService,
-        {
-          provide: PrismaService,
-          useValue: mockPrismaService,
-        },
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: TrackingService, useValue: mockTrackingService },
       ],
     }).compile();
 
@@ -175,20 +182,49 @@ describe('TasksService', () => {
         isActive: true,
       };
 
+      const mockTracking = {
+        id: 'tracking-id',
+        taskId,
+        userId,
+        startTime: new Date(),
+        accumulatedTime: 0,
+        status: 'active',
+        expEarned: 0,
+      };
+
       mockPrismaService.task.findUnique.mockResolvedValue(existingTask);
+      mockTrackingService.stopAllActiveSessions.mockResolvedValue(undefined);
+      mockTrackingService.createSession.mockResolvedValue(mockTracking);
       mockPrismaService.$transaction.mockImplementation(async (callback) => {
         return callback({
           task: {
             updateMany: jest.fn().mockResolvedValue({}),
             update: jest.fn().mockResolvedValue(updatedTask),
           },
+          expTracking: {
+            findMany: jest.fn().mockResolvedValue([]),
+            findFirst: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue(mockTracking),
+          },
         });
       });
 
       const result = await service.activate(taskId, userId);
 
-      expect(result.status).toBe(TaskStatus.ACTIVE);
-      expect(result.isActive).toBe(true);
+      expect(result.task.status).toBe(TaskStatus.ACTIVE);
+      expect(result.task.isActive).toBe(true);
+      expect(result.session).toBeDefined();
+      expect(result.session.status).toBe('active');
+      expect(mockTrackingService.stopAllActiveSessions).toHaveBeenCalledWith(
+        userId,
+        taskId,
+        expect.anything(),
+      );
+      expect(mockTrackingService.createSession).toHaveBeenCalledWith(
+        taskId,
+        userId,
+        expect.anything(),
+      );
     });
 
     it('should throw BadRequestException if task is already DONE', async () => {
@@ -214,6 +250,7 @@ describe('TasksService', () => {
         userId,
         status: TaskStatus.ACTIVE,
         isActive: true,
+        estimateHours: 6,
       };
 
       const completedTask = {
@@ -223,7 +260,18 @@ describe('TasksService', () => {
       };
 
       mockPrismaService.task.findUnique.mockResolvedValue(existingTask);
-      mockPrismaService.task.update.mockResolvedValue(completedTask);
+      mockPrismaService.$transaction.mockImplementation(async (callback) => {
+        return callback({
+          task: {
+            findUnique: jest.fn().mockResolvedValue(existingTask),
+            update: jest.fn().mockResolvedValue(completedTask),
+          },
+          trackingSession: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            update: jest.fn(),
+          },
+        });
+      });
 
       const result = await service.complete(taskId, userId);
 

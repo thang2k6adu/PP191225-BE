@@ -27,12 +27,12 @@ model User {
   updatedAt   DateTime   @updatedAt
   deletedAt   DateTime?
 
-  refreshTokens RefreshToken[]
-  notifications Notification[]
-  files         File[]
-  tasks         Task[]
-  roomMembers   RoomMember[]
-  expTrackings  ExpTracking[]
+  refreshTokens     RefreshToken[]
+  notifications     Notification[]
+  files             File[]
+  tasks             Task[]
+  roomMembers       RoomMember[]
+  trackingSessions  TrackingSession[]
 
   @@index([email])
   @@index([role])
@@ -99,12 +99,14 @@ model Task {
   deadline      DateTime
   status        TaskStatus @default(PLANNED)
   isActive      Boolean    @default(false)
+  progress      Float      @default(0) // 0-100%, calculated from all sessions
+  totalTimeSpent Int       @default(0) // total seconds from all sessions
   userId        String
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expTrackings ExpTracking[]
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackingSessions TrackingSession[]
 
   @@index([userId])
   @@index([userId, isActive])
@@ -148,12 +150,6 @@ enum RoomMemberStatus {
   LEFT
 }
 
-enum TrackingStatus {
-  active
-  paused
-  stopped
-}
-
 model Room {
   id         String         @id @default(uuid())
   type       RoomType       @default(PUBLIC)
@@ -182,23 +178,31 @@ model RoomMember {
   @@map("room_members")
 }
 
-model ExpTracking {
-  id             String          @id @default(uuid())
-  taskId         String
-  userId         String
-  startTime      DateTime?
-  accumulatedTime Int            @default(0) // in seconds
-  status         TrackingStatus  @default(active)
-  expEarned      Float?          @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+model TrackingSession {
+  id        String        @id @default(uuid())
+  taskId    String
+  userId    String
+  startTime DateTime
+  endTime   DateTime? // null = chưa kết thúc
+  duration  Int           @default(0) // seconds, calculated when endTime is set
+  status    SessionStatus @default(active)
+  expEarned Float         @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
   @@index([userId])
+  @@index([taskId, status])
   @@index([userId, status])
-  @@map("exp_trackings")
+  @@map("tracking_sessions")
+}
+
+enum SessionStatus {
+  active
+  paused
+  stopped
 }
 
