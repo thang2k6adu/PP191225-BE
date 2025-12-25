@@ -13,7 +13,201 @@ Hệ thống tracking mới cho phép:
 
 ---
 
-## 🔑 Authentication
+## � User Flow (Luồng Người Dùng)
+
+### Recommended Flow
+
+```
+1. User Login
+   ↓
+2. Matchmaking (Tìm phòng/đối thủ)
+   ↓
+3. Chọn Task để làm
+   ↓
+4. Activate Task (Bắt đầu tracking)
+   ↓
+5. Làm việc (có thể Pause/Resume)
+   ↓
+6. Stop Session (Kết thúc)
+   ↓
+7. Xem kết quả (Progress, EXP earned)
+   ↓
+8. Quay lại Matchmaking hoặc chọn Task khác
+```
+
+### Detailed Flow
+
+#### Step 1: Matchmaking
+
+```typescript
+// User tham gia matchmaking
+const matchResult = await joinMatchmaking();
+
+// Khi tìm được phòng/đối thủ
+if (matchResult.success) {
+  // Chuyển sang màn hình chọn task
+  navigateToTaskSelection();
+}
+```
+
+#### Step 2: Task Selection
+
+```typescript
+// Hiển thị danh sách tasks
+const tasks = await fetchUserTasks();
+
+// User chọn task muốn làm
+const selectedTask = await showTaskSelectionDialog(tasks);
+
+// Activate task đã chọn
+if (selectedTask) {
+  await activateTask(selectedTask.id);
+  // Bắt đầu tracking session tự động
+}
+```
+
+#### Step 3: Working Session
+
+```typescript
+// Session đang active, user có thể:
+// - Pause: Tạm dừng (nghỉ giải lao)
+// - Resume: Tiếp tục
+// - Stop: Kết thúc session
+
+// Khi stop session
+const result = await stopSession(sessionId);
+
+// Hiển thị kết quả
+showSessionSummary({
+  duration: result.duration,
+  expEarned: result.expEarned,
+  taskProgress: updatedTask.progress,
+});
+```
+
+#### Step 4: Next Action
+
+```typescript
+// Sau khi stop session, user có thể:
+
+// Option 1: Tiếp tục matchmaking
+await joinMatchmaking();
+
+// Option 2: Chọn task khác
+await selectAnotherTask();
+
+// Option 3: Kết thúc
+await logout();
+```
+
+### UI Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    LOGIN SCREEN                         │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│                MATCHMAKING SCREEN                       │
+│  [Finding opponent...] or [Room joined!]               │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│              TASK SELECTION SCREEN                      │
+│  ○ Task 1: Implement Login (8h) - 25% done             │
+│  ○ Task 2: Fix Bug #123 (2h) - 0% done                 │
+│  ○ Task 3: Setup Database (4h) - 100% done ✓           │
+│                                                         │
+│  [Select Task to Start Working]                        │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│               WORKING SCREEN                            │
+│  Task: Implement Login                                  │
+│  ⏱ Timer: 01:23:45                                      │
+│  📊 Progress: ████████░░ 35%                            │
+│                                                         │
+│  [Pause] [Stop Session]                                │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│             SESSION SUMMARY                             │
+│  ✅ Session Completed!                                  │
+│  ⏱ Duration: 1h 23m                                     │
+│  🏆 EXP Earned: 4,980 seconds                           │
+│  📊 Task Progress: 35% → 52%                            │
+│                                                         │
+│  [Back to Matchmaking] [Select Another Task]           │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Implementation Example
+
+```typescript
+// Main App Flow
+class TaskTrackingApp {
+  async start() {
+    // 1. Login
+    await this.login();
+
+    // 2. Matchmaking
+    const matchResult = await this.matchmaking();
+
+    if (matchResult.success) {
+      // 3. Task Selection
+      await this.showTaskSelection();
+    }
+  }
+
+  async showTaskSelection() {
+    const tasks = await this.fetchTasks();
+    const selectedTask = await this.showTaskDialog(tasks);
+
+    if (selectedTask) {
+      // 4. Activate and start tracking
+      await this.startWorkingSession(selectedTask.id);
+    }
+  }
+
+  async startWorkingSession(taskId: string) {
+    // Activate task
+    const result = await activateTask(taskId);
+
+    // Show working screen with timer
+    this.showWorkingScreen({
+      task: result.task,
+      session: result.session,
+    });
+
+    // Wait for user to stop
+    await this.waitForSessionEnd();
+
+    // Show summary
+    await this.showSessionSummary();
+
+    // Ask for next action
+    const nextAction = await this.askNextAction();
+
+    if (nextAction === 'matchmaking') {
+      await this.matchmaking();
+    } else if (nextAction === 'selectTask') {
+      await this.showTaskSelection();
+    }
+  }
+}
+```
+
+### Important Rules
+
+1. **Matchmaking First**: User phải join matchmaking trước khi chọn task
+2. **One Active Task**: Chỉ 1 task active tại một thời điểm
+3. **Task Selection Required**: User phải chọn task trước khi bắt đầu tracking
+4. **Session Management**: Mỗi lần activate tạo session mới
+5. **Clear Flow**: Luôn có next action rõ ràng sau mỗi bước
+
+---
+
+## �🔑 Authentication
 
 Tất cả API đều yêu cầu Bearer Token:
 
