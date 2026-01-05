@@ -23,4 +23,18 @@ export class MatchFoundDto {
     required: false,
   })
   opponentName?: string;
+
+  @ApiProperty({
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+    description: 'LiveKit access token for video room',
+    required: false,
+  })
+  livekitToken?: string;
+
+  @ApiProperty({
+    example: 'ws://localhost:7880',
+    description: 'LiveKit server URL',
+    required: false,
+  })
+  livekitUrl?: string;
 }

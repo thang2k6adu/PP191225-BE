@@ -4,6 +4,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MatchmakingService } from './matchmaking.service';
 import { MatchmakingController } from './matchmaking.controller';
 import { MatchmakingGateway } from './matchmaking.gateway';
+import { PrismaService } from '@/database/prisma.service';
+import { LiveKitService } from '@/common/services/livekit.service';
 
 /**
  * Matchmaking Module
@@ -20,7 +22,7 @@ import { MatchmakingGateway } from './matchmaking.gateway';
     }),
   ],
   controllers: [MatchmakingController],
-  providers: [MatchmakingService, MatchmakingGateway],
+  providers: [MatchmakingService, MatchmakingGateway, PrismaService, LiveKitService],
   exports: [MatchmakingService, MatchmakingGateway],
 })
 export class MatchmakingModule {}

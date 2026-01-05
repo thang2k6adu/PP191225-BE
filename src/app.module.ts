@@ -25,11 +25,13 @@ import { TrackingModule } from './modules/tracking/tracking.module';
 import { PrismaService } from './database/prisma.service';
 import { DatabaseService } from './database/database.service';
 import { CacheService } from './common/services/cache.service';
+import { LiveKitService } from './common/services/livekit.service';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import redisConfig from './config/redis.config';
 import firebaseConfig from './config/firebase.config';
+import livekitConfig from './config/livekit.config';
 import { validate } from './config/config.schema';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -42,7 +44,7 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, jwtConfig, redisConfig, firebaseConfig],
+      load: [appConfig, databaseConfig, jwtConfig, redisConfig, firebaseConfig, livekitConfig],
       validate,
       envFilePath: ['.env.local', '.env'],
     }),
@@ -163,6 +165,7 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
     PrismaService,
     DatabaseService,
     CacheService,
+    LiveKitService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

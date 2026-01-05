@@ -93,6 +93,8 @@ export class MatchmakingController {
           roomId: result.roomId!,
           opponentId: result.opponentId!,
           opponentName: result.opponentName,
+          livekitToken: result.livekitToken,
+          livekitUrl: result.livekitUrl,
         },
       );
 
@@ -103,6 +105,8 @@ export class MatchmakingController {
           roomId: result.roomId!,
           opponentId: result.opponentId!,
           opponentName: result.opponentName,
+          livekitToken: result.livekitToken,
+          livekitUrl: result.livekitUrl,
         },
       };
     } else {

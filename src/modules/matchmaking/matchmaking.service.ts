@@ -1,4 +1,7 @@
 import { Injectable, ConflictException, NotFoundException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '@/database/prisma.service';
+import { LiveKitService } from '@/common/services/livekit.service';
 import { UserState } from './enums/user-state.enum';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -39,6 +42,12 @@ export class MatchmakingService {
 
   // Simple mutex lock for matchmaking operations
   private matchmakingLock = false;
+
+  constructor(
+    private prisma: PrismaService,
+    private livekitService: LiveKitService,
+    private configService: ConfigService,
+  ) {}
 
   /**
    * Register user socket connection
@@ -121,6 +130,8 @@ export class MatchmakingService {
     opponentId?: string;
     opponentSocketId?: string;
     opponentName?: string;
+    livekitToken?: string;
+    livekitUrl?: string;
   }> {
     // Wait for lock
     await this.acquireLock();
@@ -159,6 +170,45 @@ export class MatchmakingService {
 
         // Create room
         const roomId = uuidv4();
+        const livekitRoomName = `lk-${roomId}`;
+
+        // Create room in database
+        await this.prisma.room.create({
+          data: {
+            id: roomId,
+            type: 'PUBLIC',
+            status: 'ACTIVE',
+            maxMembers: 2,
+            livekitRoomName,
+            startedAt: new Date(),
+            members: {
+              create: [
+                { userId: opponent.userId, status: 'JOINED' },
+                { userId, status: 'JOINED' },
+              ],
+            },
+          },
+        });
+
+        // Create LiveKit room
+        try {
+          await this.livekitService.createRoom(livekitRoomName, {
+            emptyTimeout: 300,
+            maxParticipants: 2,
+          });
+        } catch (error) {
+          this.logger.error(`Failed to create LiveKit room: ${error.message}`);
+          // Cleanup database room if LiveKit fails
+          await this.prisma.room.delete({ where: { id: roomId } });
+          throw error;
+        }
+
+        // Generate LiveKit tokens for both users
+        const [userToken, opponentToken] = await Promise.all([
+          this.livekitService.generateToken(userId, livekitRoomName),
+          this.livekitService.generateToken(opponent.userId, livekitRoomName),
+        ]);
+
         const room: RoomData = {
           roomId,
           players: [opponent.userId, userId],
@@ -179,12 +229,17 @@ export class MatchmakingService {
           `Match found! Room ${roomId} created for users ${opponent.userId} and ${userId}`,
         );
 
+        // Store opponent token temporarily for gateway to send
+        this.roomStore.set(`${roomId}:token:${opponent.userId}`, opponentToken as any);
+
         return {
           matched: true,
           roomId,
           opponentId: opponent.userId,
           opponentSocketId: opponentSocketId,
           opponentName: opponent.name,
+          livekitToken: userToken,
+          livekitUrl: this.configService.get<string>('livekit.url'),
         };
       } else {
         // No one waiting, add to queue
@@ -342,5 +397,15 @@ export class MatchmakingService {
    */
   private releaseLock(): void {
     this.matchmakingLock = false;
+  }
+
+  /**
+   * Get opponent's LiveKit token (helper for gateway)
+   */
+  getOpponentToken(roomId: string, userId: string): string | undefined {
+    const token = this.roomStore.get(`${roomId}:token:${userId}`) as any;
+    // Clean up after retrieval
+    this.roomStore.delete(`${roomId}:token:${userId}`);
+    return token;
   }
 }

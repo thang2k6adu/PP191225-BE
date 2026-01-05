@@ -5,11 +5,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
+import { LiveKitService } from '@/common/services/livekit.service';
 import { RoomType, RoomStatus, RoomMemberStatus, UserStatus } from '@prisma/client';
 
 @Injectable()
 export class RoomsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private livekitService: LiveKitService,
+  ) {}
 
   async joinMatchmaking(userId: string) {
     // Check if user is already in a room
@@ -270,10 +274,25 @@ export class RoomsService {
       },
     });
 
-    // If no members left, delete room
+    // If no members left, cleanup and delete room
     if (remainingMembers === 0) {
-      await this.prisma.room.delete({
+      // Cleanup LiveKit room if exists
+      if (room.livekitRoomName) {
+        try {
+          await this.livekitService.deleteRoom(room.livekitRoomName);
+        } catch (error) {
+          // Log error but continue with database cleanup
+          console.error(`Failed to delete LiveKit room: ${error.message}`);
+        }
+      }
+
+      // Update room status to CLOSED before deleting
+      await this.prisma.room.update({
         where: { id: roomId },
+        data: {
+          status: RoomStatus.CLOSED,
+          endedAt: new Date(),
+        },
       });
     } else {
       // Update room status back to WAITING if it was ACTIVE

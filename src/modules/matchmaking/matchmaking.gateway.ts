@@ -211,11 +211,16 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     opponentName: string | undefined,
     matchData: MatchFoundDto,
   ) {
+    // Get opponent's LiveKit token
+    const opponentToken = this.matchmakingService.getOpponentToken(matchData.roomId, opponentId);
+
     // Send to first user (current user who just joined)
     this.server.to(`user:${userId}`).emit('match_found', {
       roomId: matchData.roomId,
       opponentId: matchData.opponentId,
       opponentName: matchData.opponentName,
+      livekitToken: matchData.livekitToken,
+      livekitUrl: matchData.livekitUrl,
       message: 'Match found!',
     });
 
@@ -224,6 +229,8 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
       roomId: matchData.roomId,
       opponentId: userId,
       opponentName: userName,
+      livekitToken: opponentToken,
+      livekitUrl: matchData.livekitUrl,
       message: 'Match found!',
     });
 

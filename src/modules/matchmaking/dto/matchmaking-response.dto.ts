@@ -29,5 +29,7 @@ export class MatchmakingResponseDto {
     roomId: string;
     opponentId: string;
     opponentName?: string;
+    livekitToken?: string;
+    livekitUrl?: string;
   };
 }
