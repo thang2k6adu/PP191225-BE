@@ -128,27 +128,6 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     return { success: false, message: 'Use REST API endpoint' };
   }
 
-  sendMatchFound(
-    userId: string,
-    socketId: string,
-    matchData: {
-      roomId: string;
-      livekitRoomName: string;
-      token: string;
-      opponentId: string;
-    },
-  ) {
-    this.server.to(socketId).emit('match_found', {
-      roomId: matchData.roomId,
-      livekitRoomName: matchData.livekitRoomName,
-      token: matchData.token,
-      opponentId: matchData.opponentId,
-      message: 'Match found!',
-    });
-
-    this.logger.log(`Match found event sent to user ${userId}`);
-  }
-
   broadcastToRoom(roomId: string, event: string, data: any) {
     this.server.to(`room:${roomId}`).emit(event, data);
   }

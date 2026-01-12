@@ -18,9 +18,6 @@ export class LiveKitService {
     this.roomService = new RoomServiceClient(this.livekitUrl, this.apiKey, this.apiSecret);
   }
 
-  /**
-   * Create a LiveKit room
-   */
   async createRoom(
     roomName: string,
     options?: {
@@ -31,8 +28,8 @@ export class LiveKitService {
     try {
       await this.roomService.createRoom({
         name: roomName,
-        emptyTimeout: options?.emptyTimeout || 300, // 5 minutes default
-        maxParticipants: options?.maxParticipants || 0, // 0 = unlimited
+        emptyTimeout: options?.emptyTimeout || 300,
+        maxParticipants: options?.maxParticipants || 0,
       });
 
       this.logger.log(`LiveKit room created: ${roomName}`);
@@ -42,9 +39,6 @@ export class LiveKitService {
     }
   }
 
-  /**
-   * Generate access token for a user to join a room
-   */
   async generateToken(
     roomName: string,
     userId: string,
@@ -57,7 +51,7 @@ export class LiveKitService {
   ): Promise<string> {
     const token = new AccessToken(this.apiKey, this.apiSecret, {
       identity: userId,
-      ttl: options?.ttl || 7200, // 2 hours default
+      ttl: options?.ttl || 7200,
     });
 
     token.addGrant({
@@ -74,9 +68,6 @@ export class LiveKitService {
     return token.toJwt();
   }
 
-  /**
-   * Delete a LiveKit room
-   */
   async deleteRoom(roomName: string): Promise<void> {
     try {
       await this.roomService.deleteRoom(roomName);
@@ -87,9 +78,6 @@ export class LiveKitService {
     }
   }
 
-  /**
-   * List participants in a room
-   */
   async listParticipants(roomName: string) {
     try {
       const participants = await this.roomService.listParticipants(roomName);
@@ -100,9 +88,6 @@ export class LiveKitService {
     }
   }
 
-  /**
-   * Remove a participant from a room
-   */
   async removeParticipant(roomName: string, participantIdentity: string): Promise<void> {
     try {
       await this.roomService.removeParticipant(roomName, participantIdentity);
@@ -113,9 +98,6 @@ export class LiveKitService {
     }
   }
 
-  /**
-   * Get room info
-   */
   async getRoomInfo(roomName: string) {
     try {
       const rooms = await this.roomService.listRooms([roomName]);

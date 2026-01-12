@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional } from 'class-validator';
+import { IsString, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class JoinMatchmakingDto {
@@ -14,25 +14,15 @@ export class JoinMatchmakingDto {
 
 export class MatchmakingResponseDto {
   @ApiProperty()
-  status: 'MATCHED' | 'WAITING';
+  status: 'MATCHED';
 
   @ApiProperty()
   message: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  matchData?: {
+  @ApiProperty()
+  matchData: {
     roomId: string;
     livekitRoomName: string;
     token: string;
-    opponentId: string;
   };
-
-  @ApiProperty({ required: false })
-  @IsOptional()
-  suggestPublicRooms?: Array<{
-    id: string;
-    topic: string;
-    currentMembers: number;
-  }>;
 }

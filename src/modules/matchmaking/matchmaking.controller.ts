@@ -36,24 +36,23 @@ export class MatchmakingController {
    * Join matchmaking queue
    * POST /matchmaking/join
    *
-   * If queue is empty → user waits
-   * If someone is waiting → match them together and create room
+   * Immediately join or create a public room for the topic
    */
   @Post('join')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Join matchmaking queue for a topic',
+    summary: 'Join matchmaking for a topic',
     description:
-      'Join matchmaking to find an opponent. If enough users are waiting, you will be matched immediately. Otherwise, you will wait and get suggestions for public rooms to join while waiting.',
+      'Join matchmaking to find a room. You will be matched to an existing public room or a new one will be created for you.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Successfully joined matchmaking',
+    description: 'Successfully joined room',
     type: MatchmakingResponseDto,
   })
   @ApiResponse({
     status: 409,
-    description: 'User already in matchmaking queue or room',
+    description: 'User already in a room',
   })
   @ApiResponse({
     status: 401,
@@ -71,62 +70,40 @@ export class MatchmakingController {
 
     const result = await this.matchmakingService.joinMatchmaking(user.id, dto.topic);
 
-    if (result.status === 'MATCHED') {
-      // Match found! Send WebSocket event to opponent
-      if (result.opponentSocketId) {
-        this.matchmakingGateway.sendMatchFound(result.opponentId!, result.opponentSocketId, {
-          roomId: result.roomId!,
-          livekitRoomName: result.livekitRoomName!,
-          token: result.token!,
-          opponentId: user.id,
-        });
-      }
-
-      return {
-        status: 'MATCHED',
-        message: 'Match found!',
-        matchData: {
-          roomId: result.roomId!,
-          livekitRoomName: result.livekitRoomName!,
-          token: result.token!,
-          opponentId: result.opponentId!,
-        },
-      };
-    } else {
-      // Waiting for opponent - suggest public rooms
-      return {
-        status: 'WAITING',
-        message: 'Waiting for opponent...',
-        suggestPublicRooms: result.suggestPublicRooms,
-      };
-    }
+    // Always return room data immediately
+    return {
+      status: 'MATCHED',
+      message: result.isNewRoom ? 'New room created!' : 'Joined existing room!',
+      matchData: {
+        roomId: result.roomId,
+        livekitRoomName: result.livekitRoomName,
+        token: result.token,
+      },
+    };
   }
 
   /**
    * Cancel matchmaking
    * POST /matchmaking/cancel
    *
-   * Remove user from waiting queue
+   * Note: No queue anymore, users should leave room via /rooms/:roomId/leave endpoint
    */
   @Post('cancel')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Cancel matchmaking',
-    description: 'Remove yourself from the matchmaking queue if you are waiting.',
+    summary: 'Cancel matchmaking (deprecated)',
+    description:
+      'This endpoint is now deprecated. To leave a room, use the /rooms/:roomId/leave endpoint instead.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Successfully cancelled matchmaking',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'User is not in matchmaking queue',
+    description: 'Message about using leave room endpoint',
   })
   async cancelMatchmaking(@CurrentUser() user: any) {
     await this.matchmakingService.cancelMatchmaking(user.id);
 
     return {
-      message: 'You have been removed from matchmaking queue',
+      message: 'No queue to cancel. Please use /rooms/:roomId/leave endpoint to leave a room.',
     };
   }
 
