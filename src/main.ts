@@ -18,7 +18,7 @@ async function bootstrap() {
   const corsOrigin =
     configService.get<string>('app.nodeEnv') === 'production'
       ? process.env.CORS_ORIGIN?.split(',') || []
-      : ['http://localhost:5173', 'http://localhost:3000'];
+      : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'];
 
   // HTTP CORS
   app.enableCors({
@@ -26,8 +26,14 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // WebSocket CORS (Global for all Socket.IO gateways)
-  app.useWebSocketAdapter(new SocketIoAdapter(app, configService));
+  // WebSocket CORS with Redis adapter (for horizontal scaling)
+  const socketAdapter = new SocketIoAdapter(app, configService);
+  try {
+    await socketAdapter.connectToRedis();
+  } catch (error) {
+    console.warn('Socket.IO Redis adapter failed to connect, continuing without it');
+  }
+  app.useWebSocketAdapter(socketAdapter);
 
   // Global prefix
   app.setGlobalPrefix('api');

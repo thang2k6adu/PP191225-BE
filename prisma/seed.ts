@@ -3,6 +3,8 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+const PUBLIC_TOPICS = ['math', 'coding', 'english', 'pomodoro'];
+
 async function main() {
   const hashedPassword = await bcrypt.hash('password123', 10);
 
@@ -33,6 +35,30 @@ async function main() {
   });
 
   console.log({ admin, user });
+
+  // Create PUBLIC rooms for each topic
+  console.log('Creating public rooms...');
+  for (const topic of PUBLIC_TOPICS) {
+    const livekitRoomName = `public-${topic}`;
+    const room = await prisma.room.upsert({
+      where: { livekitRoomName },
+      update: {
+        status: 'ACTIVE',
+        type: 'PUBLIC',
+        visibility: 'PUBLIC',
+        topic,
+      },
+      create: {
+        type: 'PUBLIC',
+        topic,
+        visibility: 'PUBLIC',
+        status: 'ACTIVE',
+        livekitRoomName,
+        maxMembers: 10, // Public rooms can have more members
+      },
+    });
+    console.log(`Created/updated public room: ${topic}`, room.id);
+  }
 }
 
 main()
@@ -43,4 +69,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

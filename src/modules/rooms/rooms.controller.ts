@@ -11,46 +11,76 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
-  @Post('matchmaking/join')
+  @Get('public')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Join matchmaking queue' })
+  @ApiOperation({ summary: 'Get all public rooms' })
   @ApiResponse({
     status: 200,
-    description: 'Joined room successfully',
+    description: 'Public rooms retrieved successfully',
+    schema: {
+      example: {
+        error: false,
+        code: 0,
+        message: 'Success',
+        data: {
+          rooms: [
+            {
+              id: 'room-uuid-1',
+              type: 'PUBLIC',
+              topic: 'math',
+              livekitRoomName: 'public-math',
+              status: 'ACTIVE',
+              maxMembers: 10,
+              currentMembers: 3,
+            },
+            {
+              id: 'room-uuid-2',
+              type: 'PUBLIC',
+              topic: 'coding',
+              livekitRoomName: 'public-coding',
+              status: 'ACTIVE',
+              maxMembers: 10,
+              currentMembers: 1,
+            },
+          ],
+        },
+        traceId: 'abc123',
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getPublicRooms() {
+    const rooms = await this.roomsService.getPublicRooms();
+    return { rooms };
+  }
+
+  @Post(':roomId/join')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Join a public room' })
+  @ApiResponse({
+    status: 200,
+    description: 'Joined room successfully with LiveKit token',
     schema: {
       example: {
         error: false,
         code: 0,
         message: 'Joined room successfully',
         data: {
-          room: {
-            id: 'room-uuid',
-            type: 'PUBLIC',
-            status: 'WAITING',
-            maxMembers: 2,
-            members: [
-              {
-                userId: 'user-1',
-                status: 'JOINED',
-              },
-              {
-                userId: 'user-2',
-                status: 'JOINED',
-              },
-            ],
-          },
+          roomId: 'room-uuid',
+          livekitRoomName: 'public-math',
+          token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+          topic: 'math',
         },
-        traceId: 'abc123',
+        traceId: 'join123',
       },
     },
   })
-  @ApiResponse({ status: 409, description: 'User already in a room' })
+  @ApiResponse({ status: 404, description: 'Room not found' })
+  @ApiResponse({ status: 409, description: 'User already in a room or room is full' })
+  @ApiResponse({ status: 403, description: 'Cannot join private room' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async joinMatchmaking(@CurrentUser() user: any) {
-    const room = await this.roomsService.joinMatchmaking(user.id);
-    return {
-      room,
-    };
+  async joinRoom(@Param('roomId') roomId: string, @CurrentUser() user: any) {
+    return this.roomsService.joinPublicRoom(roomId, user.id);
   }
 
   @Get(':roomId')

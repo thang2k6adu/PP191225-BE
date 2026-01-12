@@ -46,8 +46,8 @@ export class LiveKitService {
    * Generate access token for a user to join a room
    */
   async generateToken(
-    userId: string,
     roomName: string,
+    userId: string,
     options?: {
       ttl?: number;
       canPublish?: boolean;
