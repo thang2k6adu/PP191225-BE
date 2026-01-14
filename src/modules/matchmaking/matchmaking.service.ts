@@ -14,6 +14,29 @@ export class MatchmakingService {
   private readonly MIN_USERS_FOR_MATCH = 2;
   private readonly instanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+  private async findExistingActiveMember(userId: string) {
+    const result = await this.prisma.roomMember.findFirst({
+      where: {
+        userId,
+        status: { not: 'LEFT' },
+        room: {
+          status: { not: 'CLOSED' }, // Only consider active rooms
+        },
+      },
+      include: { room: true },
+    });
+
+    console.log(`🔍 [MATCHMAKING] findExistingActiveMember for user ${userId}:`, {
+      found: !!result,
+      roomId: result?.roomId,
+      memberStatus: result?.status,
+      roomStatus: result?.room?.status,
+      roomType: result?.room?.type,
+    });
+
+    return result;
+  }
+
   constructor(
     private prisma: PrismaService,
     private roomsService: RoomsService,
@@ -98,13 +121,7 @@ export class MatchmakingService {
     livekitRoomName?: string;
     token?: string;
   }> {
-    const existingMember = await this.prisma.roomMember.findFirst({
-      where: {
-        userId,
-        status: { not: 'LEFT' },
-      },
-      include: { room: true },
-    });
+    const existingMember = await this.findExistingActiveMember(userId);
 
     if (existingMember && existingMember.room.status !== 'CLOSED') {
       throw new ConflictException('User already in a room');

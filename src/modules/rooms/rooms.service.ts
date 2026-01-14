@@ -18,6 +18,35 @@ export class RoomsService {
     private livekitService: LiveKitService,
   ) {}
 
+  private async findExistingActiveMember(userId: string) {
+    const result = await this.prisma.roomMember.findFirst({
+      where: {
+        userId,
+        status: {
+          not: RoomMemberStatus.LEFT,
+        },
+        room: {
+          status: {
+            not: RoomStatus.CLOSED, // Only consider active rooms
+          },
+        },
+      },
+      include: {
+        room: true,
+      },
+    });
+
+    console.log(`🔍 findExistingActiveMember for user ${userId}:`, {
+      found: !!result,
+      roomId: result?.roomId,
+      memberStatus: result?.status,
+      roomStatus: result?.room?.status,
+      roomType: result?.room?.type,
+    });
+
+    return result;
+  }
+
   generateRoomName(type: RoomType, topic?: string): string {
     if (type === RoomType.PUBLIC) {
       if (!topic) {
@@ -66,17 +95,7 @@ export class RoomsService {
 
   async findOrCreatePublicRoom(topic: string, userId: string) {
     // Check if user already in a room
-    const existingMember = await this.prisma.roomMember.findFirst({
-      where: {
-        userId,
-        status: {
-          not: RoomMemberStatus.LEFT,
-        },
-      },
-      include: {
-        room: true,
-      },
-    });
+    const existingMember = await this.findExistingActiveMember(userId);
 
     if (existingMember && existingMember.room.status !== RoomStatus.CLOSED) {
       const livekitToken = await this.livekitService.generateToken(
@@ -187,17 +206,7 @@ export class RoomsService {
   }
 
   async joinPublicRoom(roomId: string, userId: string) {
-    const existingMember = await this.prisma.roomMember.findFirst({
-      where: {
-        userId,
-        status: {
-          not: RoomMemberStatus.LEFT,
-        },
-      },
-      include: {
-        room: true,
-      },
-    });
+    const existingMember = await this.findExistingActiveMember(userId);
 
     if (existingMember && existingMember.roomId === roomId) {
       const livekitToken = await this.livekitService.generateToken(
@@ -351,17 +360,7 @@ export class RoomsService {
   }
 
   async joinMatchmaking(userId: string) {
-    const existingMember = await this.prisma.roomMember.findFirst({
-      where: {
-        userId,
-        status: {
-          not: RoomMemberStatus.LEFT,
-        },
-      },
-      include: {
-        room: true,
-      },
-    });
+    const existingMember = await this.findExistingActiveMember(userId);
 
     if (existingMember && existingMember.room.status !== RoomStatus.CLOSED) {
       throw new ConflictException('User already in a room');
@@ -564,25 +563,35 @@ export class RoomsService {
   }
 
   async leave(roomId: string, userId: string) {
+    console.log(`🚪 Leave room request: userId=${userId}, roomId=${roomId}`);
+
+    // TODO: tối ưu cái query này hộ
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
       include: {
-        members: {
-          where: {
-            status: {
-              not: RoomMemberStatus.LEFT,
-            },
-          },
-        },
+        members: true,
       },
     });
 
     if (!room) {
+      console.log(`❌ Room ${roomId} not found`);
       throw new NotFoundException('Room not found');
     }
 
+    console.log(
+      `🏠 Room found: type=${room.type}, status=${room.status}, members=${room.members.length}`,
+    );
+
     const member = room.members.find((m) => m.userId === userId);
+    console.log(`👤 Member found:`, {
+      found: !!member,
+      memberId: member?.id,
+      currentStatus: member?.status,
+      leftAt: member?.leftAt,
+    });
+
     if (!member) {
+      console.log(`⚠️ Member not found, updating user status to ONLINE`);
       await this.prisma.user.update({
         where: { id: userId },
         data: { status: UserStatus.ONLINE },
@@ -590,6 +599,16 @@ export class RoomsService {
       return { message: 'Left room successfully' };
     }
 
+    if (member.status === RoomMemberStatus.LEFT) {
+      console.log(`⚠️ Member already LEFT, updating user status to ONLINE`);
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { status: UserStatus.ONLINE },
+      });
+      return { message: 'Left room successfully' };
+    }
+
+    console.log(`✅ Updating member status to LEFT`);
     await this.prisma.roomMember.update({
       where: { id: member.id },
       data: {
@@ -607,11 +626,16 @@ export class RoomsService {
       },
     });
 
-    if (remainingMembers === 0) {
+    console.log(`👥 Remaining members: ${remainingMembers}`);
+
+    // Close MATCH room if no remaining members OR if it's a match room with only 1 person left
+    if (remainingMembers === 0 || (room.type === RoomType.MATCH && remainingMembers <= 1)) {
       if (room.type === RoomType.MATCH) {
+        console.log(`🔒 Closing MATCH room ${roomId}`);
         if (room.livekitRoomName) {
           try {
             await this.livekitService.deleteRoom(room.livekitRoomName);
+            console.log(`✅ LiveKit room ${room.livekitRoomName} deleted`);
           } catch (error) {
             console.error(`Failed to delete LiveKit room: ${error.message}`);
           }
@@ -624,14 +648,17 @@ export class RoomsService {
             endedAt: new Date(),
           },
         });
+        console.log(`✅ Room ${roomId} status updated to CLOSED`);
       }
     }
 
+    console.log(`👤 Updating user ${userId} status to ONLINE`);
     await this.prisma.user.update({
       where: { id: userId },
       data: { status: UserStatus.ONLINE },
     });
 
+    console.log(`✅ Leave room completed successfully`);
     return { message: 'Left room successfully' };
   }
 }
