@@ -8,7 +8,7 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { MatchmakingService } from './matchmaking.service';
@@ -25,6 +25,7 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
+    @Inject(forwardRef(() => MatchmakingService))
     private matchmakingService: MatchmakingService,
   ) {}
 
@@ -95,13 +96,11 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
 
     this.logger.log(`User ${userId} joined Socket.IO room ${roomId}`);
 
-    // Emit confirmation
     client.emit('room_joined', {
       roomId,
       message: 'Successfully joined room',
     });
 
-    // Notify other players in room
     client.to(`room:${roomId}`).emit('player_joined', {
       userId,
       roomId,
@@ -134,5 +133,13 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
 
   sendToUser(userId: string, event: string, data: any) {
     this.server.to(`user:${userId}`).emit(event, data);
+    this.logger.debug(`Sent '${event}' event to user ${userId}`);
+  }
+
+  sendToUsers(userIds: string[], event: string, data: any) {
+    userIds.forEach((userId) => {
+      this.sendToUser(userId, event, data);
+    });
+    this.logger.log(`Sent '${event}' event to ${userIds.length} users`);
   }
 }

@@ -12,9 +12,32 @@ export interface QueuedUser {
 export class MatchmakingRedisService {
   private readonly logger = new Logger(MatchmakingRedisService.name);
   private redis: Redis | null = null;
+  private subscriber: Redis | null = null;
   private isConnected = false;
   private readonly QUEUE_KEY_PREFIX = 'matchmaking:queue:';
   private readonly USER_STATE_KEY_PREFIX = 'matchmaking:user:';
+  private readonly SOCKET_KEY_PREFIX = 'matchmaking:socket:';
+  private readonly PUBSUB_CHANNEL = 'matchmaking:events';
+  private eventHandlers = new Map<string, (data: any) => void>();
+
+  private readonly TRY_POP_LUA = `
+    local queueKey = KEYS[1]
+    local minUsers = tonumber(ARGV[1])
+
+    local len = redis.call("LLEN", queueKey)
+    if len < minUsers then
+      return nil
+    end
+
+    local result = {}
+    for i = 1, minUsers do
+      local item = redis.call("RPOP", queueKey)
+      if item then
+        table.insert(result, item)
+      end
+    end
+    return result
+  `;
 
   constructor(private configService: ConfigService) {
     this.initRedis();
@@ -27,9 +50,9 @@ export class MatchmakingRedisService {
         port: this.configService.get('redis.port'),
         password: this.configService.get('redis.password'),
         lazyConnect: true,
-        maxRetriesPerRequest: 0, // Fail fast, don't retry
-        enableOfflineQueue: false, // Don't queue commands
-        retryStrategy: () => null, // Disable reconnection
+        maxRetriesPerRequest: 0,
+        enableOfflineQueue: false,
+        retryStrategy: () => null,
       });
 
       this.redis.on('connect', () => {
@@ -45,7 +68,6 @@ export class MatchmakingRedisService {
         this.isConnected = false;
       });
 
-      // Try once - silent failure
       this.redis.connect().catch(() => {
         this.logger.warn('⚠️  Redis unavailable - matchmaking queue disabled');
       });
@@ -70,9 +92,6 @@ export class MatchmakingRedisService {
     return true;
   }
 
-  /**
-   * Add user to matchmaking queue for a specific topic
-   */
   async addToQueue(topic: string, user: QueuedUser): Promise<void> {
     if (!(await this.ensureConnection())) {
       throw new Error('Redis connection unavailable');
@@ -81,36 +100,30 @@ export class MatchmakingRedisService {
     const userData = JSON.stringify(user);
     await this.redis!.lpush(queueKey, userData);
 
-    // Also store user state with TTL (10 minutes)
     const userStateKey = this.getUserStateKey(user.userId);
+    // TODO: nếu user chờ quá 10' mà ko match được chắc chắn lỗi, nên tiếp tục xử lý
     await this.redis!.setex(userStateKey, 600, JSON.stringify({ topic, status: 'WAITING' }));
 
     this.logger.log(`User ${user.userId} added to queue for topic: ${topic}`);
   }
 
-  /**
-   * Remove user from matchmaking queue
-   */
   async removeFromQueue(topic: string, userId: string): Promise<boolean> {
     if (!(await this.ensureConnection())) {
       return false;
     }
     const queueKey = this.getQueueKey(topic);
 
-    // Get all items and filter out the user
     const queueItems = await this.redis!.lrange(queueKey, 0, -1);
     const filtered = queueItems.filter((item) => {
       const user = JSON.parse(item) as QueuedUser;
       return user.userId !== userId;
     });
 
-    // Replace queue with filtered items
     await this.redis!.del(queueKey);
     if (filtered.length > 0) {
       await this.redis!.rpush(queueKey, ...filtered);
     }
 
-    // Remove user state
     const userStateKey = this.getUserStateKey(userId);
     await this.redis!.del(userStateKey);
 
@@ -118,46 +131,35 @@ export class MatchmakingRedisService {
     return true;
   }
 
-  /**
-   * Get current queue length for a topic
-   */
-  async getQueueLength(topic: string): Promise<number> {
-    if (!(await this.ensureConnection())) {
-      return 0;
-    }
-    const queueKey = this.getQueueKey(topic);
-    return await this.redis!.llen(queueKey);
-  }
-
-  /**
-   * Pop N users from the queue for matching
-   */
-  async popUsers(topic: string, count: number): Promise<QueuedUser[]> {
+  async tryMatch(topic: string, minUsers: number): Promise<QueuedUser[]> {
     if (!(await this.ensureConnection())) {
       return [];
     }
+
     const queueKey = this.getQueueKey(topic);
-    const users: QueuedUser[] = [];
 
-    for (let i = 0; i < count; i++) {
-      const userData = await this.redis!.rpop(queueKey);
-      if (!userData) break;
+    try {
+      const result = await this.redis!.eval(this.TRY_POP_LUA, 1, queueKey, minUsers);
 
-      const user = JSON.parse(userData) as QueuedUser;
-      users.push(user);
+      if (!result || (Array.isArray(result) && result.length === 0)) {
+        return [];
+      }
 
-      // Update user state
-      const userStateKey = this.getUserStateKey(user.userId);
-      await this.redis!.setex(userStateKey, 600, JSON.stringify({ topic, status: 'MATCHED' }));
+      const users = (result as string[]).map((item) => JSON.parse(item) as QueuedUser);
+
+      for (const user of users) {
+        const userStateKey = this.getUserStateKey(user.userId);
+        await this.redis!.setex(userStateKey, 600, JSON.stringify({ topic, status: 'MATCHED' }));
+      }
+
+      this.logger.log(`✅ Matched ${users.length} users from queue for topic: ${topic}`);
+      return users;
+    } catch (error) {
+      this.logger.error(`❌ tryMatch failed: ${error.message}`);
+      return [];
     }
-
-    this.logger.log(`Popped ${users.length} users from queue for topic: ${topic}`);
-    return users;
   }
 
-  /**
-   * Get user's current matchmaking state
-   */
   async getUserState(userId: string): Promise<{ topic: string; status: string } | null> {
     if (!(await this.ensureConnection())) {
       return null;
@@ -167,9 +169,6 @@ export class MatchmakingRedisService {
     return state ? JSON.parse(state) : null;
   }
 
-  /**
-   * Get all users in queue for a topic (for debugging)
-   */
   async getQueueUsers(topic: string): Promise<QueuedUser[]> {
     if (!(await this.ensureConnection())) {
       return [];
@@ -179,9 +178,6 @@ export class MatchmakingRedisService {
     return queueItems.map((item) => JSON.parse(item) as QueuedUser);
   }
 
-  /**
-   * Clear entire queue for a topic (admin/debug)
-   */
   async clearQueue(topic: string): Promise<void> {
     if (!(await this.ensureConnection())) {
       return;
@@ -199,7 +195,61 @@ export class MatchmakingRedisService {
     return `${this.USER_STATE_KEY_PREFIX}${userId}`;
   }
 
+  async registerSocket(userId: string, socketId: string, instanceId: string): Promise<void> {
+    if (!(await this.ensureConnection())) return;
+
+    const key = `${this.SOCKET_KEY_PREFIX}${userId}`;
+    await this.redis!.setex(
+      key,
+      3600,
+      JSON.stringify({ socketId, instanceId, connectedAt: Date.now() }),
+    );
+  }
+
+  async unregisterSocket(userId: string): Promise<void> {
+    if (!(await this.ensureConnection())) return;
+
+    const key = `${this.SOCKET_KEY_PREFIX}${userId}`;
+    await this.redis!.del(key);
+  }
+
+  async getSocketInfo(userId: string): Promise<{ socketId: string; instanceId: string } | null> {
+    if (!(await this.ensureConnection())) return null;
+
+    const key = `${this.SOCKET_KEY_PREFIX}${userId}`;
+    const data = await this.redis!.get(key);
+    return data ? JSON.parse(data) : null;
+  }
+
+  async publishEvent(event: string, data: any): Promise<void> {
+    if (!(await this.ensureConnection())) return;
+
+    const message = JSON.stringify({ event, data, timestamp: Date.now() });
+    await this.redis!.publish(this.PUBSUB_CHANNEL, message);
+    this.logger.debug(`📡 Published event: ${event}`);
+  }
+
+  onEvent(event: string, handler: (data: any) => void): void {
+    this.eventHandlers.set(event, handler);
+  }
+
+  private handlePubSubMessage(channel: string, message: string): void {
+    try {
+      const { event, data } = JSON.parse(message);
+      const handler = this.eventHandlers.get(event);
+
+      if (handler) {
+        handler(data);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to handle pub/sub message: ${error.message}`);
+    }
+  }
+
   async onModuleDestroy() {
+    if (this.subscriber) {
+      await this.subscriber.quit();
+    }
     if (this.redis && this.isConnected) {
       await this.redis.quit();
     }
