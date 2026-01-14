@@ -137,6 +137,7 @@ export class MatchmakingService {
     });
 
     if (availableRoom && availableRoom.members.length < availableRoom.maxMembers) {
+      // Join available room và emit event ngay lập tức
       await this.prisma.roomMember.create({
         data: {
           roomId: availableRoom.id,
@@ -150,20 +151,20 @@ export class MatchmakingService {
         data: { status: 'IN_ROOM' },
       });
 
-      const token = await this.roomsService['livekitService'].generateToken(
-        availableRoom.livekitRoomName,
-        userId,
-      );
+      // Update Redis user state
+      await this.redisService.setUserState(userId, {
+        status: 'IN_ROOM',
+        roomId: availableRoom.id,
+        timestamp: Date.now(),
+      });
 
       this.logger.log(`User ${userId} joined existing room ${availableRoom.id}`);
 
-      // TODO: chưa update redis user state??
-      return {
-        status: 'MATCHED',
-        roomId: availableRoom.id,
-        livekitRoomName: availableRoom.livekitRoomName,
-        token,
-      };
+      await this.notifyMatchFound(availableRoom.id, availableRoom.livekitRoomName, [
+        { userId, socketId },
+      ]);
+
+      return { status: 'WAITING' };
     }
 
     await this.redisService.addToQueue('random', {
@@ -265,7 +266,6 @@ export class MatchmakingService {
     } catch (error) {
       this.logger.error(`❌ Failed to create match: ${error.message}`);
 
-      // Requeue all users on failure
       for (const user of users) {
         await this.redisService.addToQueue('random', {
           ...user,
@@ -319,7 +319,6 @@ export class MatchmakingService {
           this.gateway.sendToUser(user.userId, 'match_found', payload);
           this.logger.log(`✅ [Local] Notified user ${user.userId} about match ${roomId}`);
         } else {
-          // Publish to Redis so the correct instance can emit to the socket
           await this.redisService.publishEvent('notify_user', {
             userId: user.userId,
             targetInstanceId: socketInfo.instanceId,

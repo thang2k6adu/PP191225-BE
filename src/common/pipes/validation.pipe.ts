@@ -20,7 +20,7 @@ export class ValidationPipe implements PipeTransform<any> {
       throw new BadRequestException(messages.join('; '));
     }
 
-    return value;
+    return object; // Return the transformed object, not original value
   }
 
   private toValidate(metatype: new (...args: any[]) => any): boolean {

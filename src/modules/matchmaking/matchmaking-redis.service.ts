@@ -49,10 +49,19 @@ export class MatchmakingRedisService {
         host: this.configService.get('redis.host'),
         port: this.configService.get('redis.port'),
         password: this.configService.get('redis.password'),
-        lazyConnect: true,
-        maxRetriesPerRequest: 0,
-        enableOfflineQueue: false,
-        retryStrategy: () => null,
+        tls: this.configService.get('redis.tls') ? {} : undefined,
+        lazyConnect: false, // Connect immediately
+        maxRetriesPerRequest: 3, // Allow retries
+        enableOfflineQueue: true,
+        retryStrategy: (times) => {
+          const delay = Math.min(times * 50, 2000);
+          this.logger.log(`Redis retry attempt ${times}, delay: ${delay}ms`);
+          return delay;
+        },
+        connectTimeout: 10000,
+        commandTimeout: 5000,
+        keepAlive: 30000,
+        family: 4, // Force IPv4
       });
 
       this.redis.on('connect', () => {
@@ -60,17 +69,26 @@ export class MatchmakingRedisService {
         this.logger.log('✅ Redis connected for matchmaking');
       });
 
-      this.redis.on('error', () => {
+      this.redis.on('error', (error) => {
         this.isConnected = false;
+        this.logger.error(`Redis error: ${error.message}`);
       });
 
       this.redis.on('close', () => {
         this.isConnected = false;
+        this.logger.warn('Redis connection closed');
       });
 
-      this.redis.connect().catch(() => {
-        this.logger.warn('⚠️  Redis unavailable - matchmaking queue disabled');
+      this.redis.on('reconnecting', () => {
+        this.logger.log('Redis reconnecting...');
       });
+
+      this.redis.on('ready', () => {
+        this.isConnected = true;
+        this.logger.log('Redis ready for commands');
+      });
+
+      // Don't call connect() manually - lazyConnect: false handles it
     } catch (error) {
       this.logger.error('Failed to initialize Redis:', error.message);
     }
@@ -80,16 +98,25 @@ export class MatchmakingRedisService {
     if (!this.redis) {
       throw new Error('Redis client not initialized');
     }
-    if (!this.isConnected) {
-      try {
-        await this.redis.connect();
-        return true;
-      } catch (error) {
-        this.logger.error('Redis connection failed:', error.message);
-        return false;
-      }
+
+    // Check Redis status instead of manual connect
+    if ((this.redis as any).status === 'ready') {
+      return true;
     }
-    return true;
+
+    if ((this.redis as any).status === 'connecting') {
+      // Wait for connection to complete (max 2 seconds)
+      const timeout = 2000;
+      const start = Date.now();
+      while ((this.redis as any).status === 'connecting' && Date.now() - start < timeout) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return (this.redis as any).status === 'ready';
+    }
+
+    // If disconnected, ioredis will auto-reconnect with retryStrategy
+    this.logger.warn(`Redis not ready, current status: ${(this.redis as any).status}`);
+    return false;
   }
 
   async addToQueue(topic: string, user: QueuedUser): Promise<void> {
@@ -167,6 +194,15 @@ export class MatchmakingRedisService {
     const userStateKey = this.getUserStateKey(userId);
     const state = await this.redis!.get(userStateKey);
     return state ? JSON.parse(state) : null;
+  }
+
+  async setUserState(userId: string, state: any): Promise<void> {
+    if (!(await this.ensureConnection())) {
+      return;
+    }
+    const userStateKey = this.getUserStateKey(userId);
+    await this.redis!.setex(userStateKey, 600, JSON.stringify(state));
+    this.logger.log(`User state updated for ${userId}: ${JSON.stringify(state)}`);
   }
 
   async getQueueUsers(topic: string): Promise<QueuedUser[]> {

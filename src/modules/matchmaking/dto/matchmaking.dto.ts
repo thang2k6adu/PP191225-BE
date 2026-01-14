@@ -1,8 +1,13 @@
-import { IsOptional } from 'class-validator';
+import { IsOptional, ValidateIf } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class JoinMatchmakingDto {
   // No parameters needed for random matching
+  // Adding optional placeholder to make class-validator happy
+  @IsOptional()
+  @ValidateIf(() => false) // Never validate this field
+  @ApiProperty({ required: false, description: 'Placeholder field - not used' })
+  _placeholder?: any;
 }
 
 export class MatchmakingResponseDto {
