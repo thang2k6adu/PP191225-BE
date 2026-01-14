@@ -1,8 +1,8 @@
-# 🎮 Hướng Dẫn Frontend - Hệ Thống Matchmaking & Rooms
+# 🎮 Hướng Dẫn Frontend - Hệ Thống Matchmaking
 
-> **Ngày cập nhật:** 07/01/2026  
-> **Kiến trúc:** Room-centric với Redis Queue  
-> **Đặc điểm:** Hybrid UX - Luôn có đường thoát cho user
+> **Ngày cập nhật:** 14/01/2026  
+> **Kiến trúc:** Random Matchmaking với Redis Queue  
+> **Đặc điểm:** Real-time matching, Multi-instance support
 
 ---
 
@@ -13,8 +13,9 @@
 3. [REST API Endpoints](#rest-api-endpoints)
 4. [WebSocket Events](#websocket-events)
 5. [Implementation Guide](#implementation-guide)
-6. [Error Handling](#error-handling)
-7. [Best Practices](#best-practices)
+6. [State Management](#state-management)
+7. [Error Handling](#error-handling)
+8. [Best Practices](#best-practices)
 
 ---
 
@@ -24,213 +25,156 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  ROOM = Trung tâm của mọi thứ                      │
-│  • PUBLIC rooms: Luôn sẵn sàng, ai cũng join được  │
-│  • MATCH rooms: Tạo từ matchmaking, đóng khi rỗng  │
+│  RANDOM MATCHMAKING = Tìm kiếm ngẫu nhiên           │
+│  • Join existing room nếu có (< maxMembers)        │
+│  • Nếu không có room → vào queue chờ               │
+│  • Queue đủ người (≥2) → tạo room mới             │
 └─────────────────────────────────────────────────────┘
 ```
 
-### Topics Có Sẵn
+### User States
 
 ```typescript
-const PUBLIC_TOPICS = ['math', 'coding', 'english', 'pomodoro'];
+enum UserState {
+  IDLE = 'IDLE', // Không trong matchmaking hoặc room
+  WAITING = 'WAITING', // Đang chờ trong queue
+  IN_ROOM = 'IN_ROOM', // Đã match, đang trong room
+}
 ```
 
-### Naming Convention
+### Room Types
 
-- **Public rooms:** `public-math`, `public-coding`, `public-english`, `public-pomodoro`
-- **Match rooms:** `match-{uuid}` (VD: `match-a1b2c3d4-e5f6-7890-abcd-ef1234567890`)
+- **MATCH rooms:** Tạo từ matchmaking, tự động đóng khi empty
+- **LiveKit Integration:** Mỗi room có `livekitRoomName` tương ứng
 
 ---
 
 ## 👤 Flow Người Dùng
 
-### Option 1: Join Public Room Trực Tiếp (KHUYẾN NGHỊ)
-
-```
-User vào app
-  ↓
-Xem danh sách Public Rooms
-  ↓
-Chọn topic yêu thích
-  ↓
-Join ngay (không chờ đợi)
-  ↓
-Học/làm việc với người khác
-```
-
-**Ưu điểm:**
-
-- ⚡ Tức thì, không chờ
-- 👥 Có thể có nhiều người (max 10)
-- 🔄 Linh hoạt, vào ra tự do
-
-### Option 2: Matchmaking (Tìm Đối Thủ 1v1)
+### Matchmaking Flow
 
 ```
 User bấm "Find Match"
   ↓
-Chọn topic
+POST /matchmaking/join
   ↓
 ┌─────────────────────────────┐
-│ Đủ người? (>= 2)            │
+│ Có room available?          │
 ├─────────────────────────────┤
-│ ✅ YES → Tạo MATCH room     │
-│    Vào ngay với 1 đối thủ   │
+│ ✅ YES → Join ngay          │
+│    Return: MATCHED          │
+│    + roomId, token          │
 │                             │
 │ ❌ NO → Vào queue chờ       │
-│    Hiện suggestions:        │
-│    "Join public room?"      │
+│    Return: WAITING          │
+│    Listen WebSocket event   │
 └─────────────────────────────┘
+  ↓
+[WAITING] User khác join queue
+  ↓
+Queue đủ 2+ người
+  ↓
+🎮 Tạo room mới
+  ↓
+📡 WebSocket emit 'match_found'
+   → Tất cả users trong match
 ```
 
-**Ưu điểm:**
+### User Experience
 
-- 🎯 1v1 cụ thể với 1 người
-- 🔒 Private room
-- 🏆 Phù hợp cho thi đấu/pomodoro nghiêm túc
+**Scenario 1: Instant Match (Lucky)**
+
+```
+Click "Find Match" → Immediately get room token → Join LiveKit
+```
+
+**Scenario 2: Wait for Opponent**
+
+```
+Click "Find Match" → Show waiting UI → Get WebSocket notification → Join LiveKit
+```
+
+**Scenario 3: Cancel While Waiting**
+
+```
+Click "Find Match" → Waiting → Click "Cancel" → Back to idle
+```
 
 ---
 
 ## 🔌 REST API Endpoints
 
-### 1. Lấy Danh Sách Public Rooms
+### Base URL
+
+```
+https://your-api.com/api
+```
+
+### Authentication
+
+Tất cả endpoints yêu cầu JWT Bearer token:
 
 ```http
-GET /api/rooms/public
-Authorization: Bearer {token}
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-**Response:**
-
-```json
-{
-  "error": false,
-  "code": 0,
-  "message": "Success",
-  "data": {
-    "rooms": [
-      {
-        "id": "uuid-1",
-        "type": "PUBLIC",
-        "topic": "math",
-        "livekitRoomName": "public-math",
-        "status": "ACTIVE",
-        "maxMembers": 10,
-        "currentMembers": 3
-      },
-      {
-        "id": "uuid-2",
-        "topic": "coding",
-        "livekitRoomName": "public-coding",
-        "currentMembers": 1
-      }
-    ]
-  }
-}
-```
-
-**Khi nào dùng:**
-
-- Hiện màn hình chọn room
-- Refresh danh sách
-- Khi user đang WAITING trong matchmaking (show suggestions)
-
----
-
-### 2. Join Public Room
+### 1. Join Matchmaking
 
 ```http
-POST /api/rooms/:roomId/join
-Authorization: Bearer {token}
-```
-
-**Response:**
-
-```json
-{
-  "error": false,
-  "code": 0,
-  "message": "Joined room successfully",
-  "data": {
-    "roomId": "uuid-1",
-    "livekitRoomName": "public-math",
-    "token": "eyJhbGciOiJIUzI1NiIs...",
-    "topic": "math"
-  }
-}
-```
-
-**Sử dụng token:**
-
-```typescript
-import { Room } from 'livekit-client';
-
-async function joinRoom(roomName: string, token: string) {
-  const room = new Room();
-  await room.connect(LIVEKIT_URL, token);
-
-  // Bật camera/mic
-  await room.localParticipant.enableCameraAndMicrophone();
-}
-```
-
----
-
-### 3. Join Matchmaking Queue
-
-```http
-POST /api/matchmaking/join
-Authorization: Bearer {token}
+POST /matchmaking/join
 Content-Type: application/json
+Authorization: Bearer {token}
 
-{
-  "topic": "math"
-}
+{}
 ```
 
-**Response (MATCHED):**
+**Response (MATCHED - Instant):**
 
 ```json
 {
   "status": "MATCHED",
-  "message": "Match found!",
+  "message": "Joined room successfully!",
   "matchData": {
-    "roomId": "uuid-3",
-    "livekitRoomName": "match-a1b2c3d4-...",
-    "token": "eyJhbGciOiJIUzI1NiIs...",
-    "opponentId": "user-uuid"
+    "roomId": "uuid-123",
+    "livekitRoomName": "match-1705234567-abc123",
+    "token": "eyJhbGciOiJIUzI1NiIs..."
   }
 }
 ```
 
-**Response (WAITING):**
+**Response (WAITING - Need to wait):**
 
 ```json
 {
   "status": "WAITING",
-  "message": "Waiting for opponent...",
-  "suggestPublicRooms": [
-    {
-      "id": "uuid-1",
-      "topic": "math",
-      "currentMembers": 3
-    },
-    {
-      "id": "uuid-2",
-      "topic": "math",
-      "currentMembers": 1
-    }
-  ]
+  "message": "Waiting for more users..."
 }
 ```
 
+**Response (ERROR):**
+
+```json
+HTTP 409 Conflict
+{
+  "message": "User already in a room or queue"
+}
+```
+
+```json
+HTTP 409 Conflict
+{
+  "message": "Please connect to WebSocket before joining matchmaking"
+}
+```
+
+**⚠️ Điều kiện:** User PHẢI connect WebSocket trước khi gọi API này!
+
 ---
 
-### 4. Cancel Matchmaking
+### 2. Cancel Matchmaking
 
 ```http
-POST /api/matchmaking/cancel
+POST /matchmaking/cancel
 Authorization: Bearer {token}
 ```
 
@@ -242,12 +186,21 @@ Authorization: Bearer {token}
 }
 ```
 
+**Response (ERROR):**
+
+```json
+HTTP 409 Conflict
+{
+  "message": "User is not in matchmaking queue"
+}
+```
+
 ---
 
-### 5. Leave Room
+### 3. Get Statistics (Debug)
 
 ```http
-POST /api/rooms/:roomId/leave
+GET /matchmaking/stats
 Authorization: Bearer {token}
 ```
 
@@ -255,13 +208,19 @@ Authorization: Bearer {token}
 
 ```json
 {
-  "message": "Left room successfully"
+  "onlineUsers": 25
 }
 ```
 
 ---
 
 ## 🔥 WebSocket Events
+
+### Namespace
+
+```typescript
+const namespace = '/matchmaking';
+```
 
 ### Kết Nối
 
@@ -278,39 +237,82 @@ socket.on('connect', () => {
   console.log('Connected to matchmaking');
 });
 
-socket.on('authenticated', (data) => {
+socket.on('connected', (data) => {
   console.log('Authenticated:', data.userId);
+  // {
+  //   userId: "user-123",
+  //   message: "Successfully connected to matchmaking server"
+  // }
 });
 ```
 
+### Authentication Error
+
+```typescript
+socket.on('error', (data) => {
+  console.error('WebSocket error:', data.message);
+  // Possible errors:
+  // - "Authentication required"
+  // - "Authentication failed"
+});
+```
+
+---
+
 ### Events Nhận Từ Server
 
-#### 1. `match_found`
+#### 1. `match_found` ⭐ QUAN TRỌNG NHẤT
 
-Nhận khi có người match với bạn (bạn đang WAITING, có người join sau)
+Nhận khi matchmaking tìm thấy đối thủ:
 
 ```typescript
 socket.on('match_found', (data) => {
   console.log('Match found!', data);
   // {
-  //   roomId: "uuid",
-  //   livekitRoomName: "match-...",
-  //   token: "eyJ...",
-  //   opponentId: "user-uuid",
-  //   message: "Match found!"
+  //   roomId: "uuid-123",
+  //   livekitRoomName: "match-1705234567-abc123",
+  //   token: "eyJhbGci...",
+  //   wsUrl: "ws://localhost:7880",
+  //   matchedUsers: ["user-123", "user-456"],
+  //   timestamp: "2026-01-14T10:30:00.000Z"
   // }
 
-  // Redirect to room
-  navigateToRoom(data.livekitRoomName, data.token);
+  // 🎯 Redirect to LiveKit room immediately
+  joinLiveKitRoom(data.livekitRoomName, data.token);
 });
 ```
 
-#### 2. `error`
+#### 2. Room Events (Optional)
 
 ```typescript
-socket.on('error', (data) => {
-  console.error('WebSocket error:', data.message);
+// User có thể join room-specific events (không bắt buộc)
+socket.emit('join_room', { roomId: 'room-123' });
+
+socket.on('room_joined', (data) => {
+  // { roomId: "room-123", message: "Successfully joined room" }
 });
+
+socket.on('player_joined', (data) => {
+  // { userId: "user-456", roomId: "room-123" }
+  console.log('Another player joined:', data.userId);
+});
+```
+
+---
+
+### Events Gửi Lên Server
+
+#### 1. `join_room` (Optional)
+
+```typescript
+socket.emit('join_room', { roomId: 'room-123' });
+```
+
+#### 2. `leave_room` (Không khuyến nghị)
+
+```typescript
+socket.emit('leave_room');
+// Server sẽ response: "Please use REST API POST /rooms/:roomId/leave"
 ```
 
 ---
@@ -319,163 +321,361 @@ socket.on('error', (data) => {
 
 ### React/Next.js Example
 
-```typescript
-// hooks/useMatchmaking.ts
-import { useState, useEffect } from 'react';
-import { useSocket } from './useSocket';
-import { api } from '@/lib/api';
+#### 1. WebSocket Hook
 
-export function useMatchmaking() {
-  const socket = useSocket('/matchmaking');
-  const [status, setStatus] = useState<'idle' | 'waiting' | 'matched'>('idle');
-  const [matchData, setMatchData] = useState<any>(null);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+```typescript
+// hooks/useMatchmakingSocket.ts
+import { useEffect, useRef, useState } from 'react';
+import io, { Socket } from 'socket.io-client';
+
+export function useMatchmakingSocket(token: string) {
+  const socketRef = useRef<Socket | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    socket.on('match_found', (data) => {
-      setStatus('matched');
-      setMatchData(data);
+    if (!token) return;
+
+    const socket = io(`${process.env.NEXT_PUBLIC_WS_URL}/matchmaking`, {
+      auth: { token },
+      transports: ['websocket', 'polling'],
     });
 
+    socket.on('connect', () => {
+      setConnected(true);
+      setError(null);
+      console.log('🔌 Connected to matchmaking');
+    });
+
+    socket.on('connected', (data) => {
+      console.log('✅ Authenticated:', data.userId);
+    });
+
+    socket.on('error', (data) => {
+      setError(data.message);
+      console.error('❌ WebSocket error:', data.message);
+    });
+
+    socket.on('disconnect', () => {
+      setConnected(false);
+      console.log('🔌 Disconnected from matchmaking');
+    });
+
+    socketRef.current = socket;
+
     return () => {
-      socket.off('match_found');
+      socket.disconnect();
+      socketRef.current = null;
+      setConnected(false);
     };
-  }, [socket]);
-
-  const joinMatchmaking = async (topic: string) => {
-    try {
-      const response = await api.post('/matchmaking/join', { topic });
-
-      if (response.data.status === 'MATCHED') {
-        setStatus('matched');
-        setMatchData(response.data.matchData);
-      } else {
-        setStatus('waiting');
-        setSuggestions(response.data.suggestPublicRooms || []);
-      }
-    } catch (error) {
-      console.error('Join matchmaking failed:', error);
-    }
-  };
-
-  const cancelMatchmaking = async () => {
-    try {
-      await api.post('/matchmaking/cancel');
-      setStatus('idle');
-      setSuggestions([]);
-    } catch (error) {
-      console.error('Cancel failed:', error);
-    }
-  };
+  }, [token]);
 
   return {
-    status,
-    matchData,
-    suggestions,
-    joinMatchmaking,
-    cancelMatchmaking,
+    socket: socketRef.current,
+    connected,
+    error,
   };
 }
 ```
 
-### Component Usage
+#### 2. Matchmaking Hook
+
+```typescript
+// hooks/useMatchmaking.ts
+import { useState, useEffect, useCallback } from 'react';
+import { useMatchmakingSocket } from './useMatchmakingSocket';
+import { api } from '@/lib/api';
+
+type MatchmakingState = 'idle' | 'waiting' | 'matched';
+
+interface MatchData {
+  roomId: string;
+  livekitRoomName: string;
+  token: string;
+  wsUrl?: string;
+  matchedUsers?: string[];
+}
+
+export function useMatchmaking(token: string) {
+  const { socket, connected } = useMatchmakingSocket(token);
+  const [state, setState] = useState<MatchmakingState>('idle');
+  const [matchData, setMatchData] = useState<MatchData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Listen for match found event
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMatchFound = (data: any) => {
+      console.log('🎉 Match found!', data);
+      setState('matched');
+      setMatchData({
+        roomId: data.roomId,
+        livekitRoomName: data.livekitRoomName,
+        token: data.token,
+        wsUrl: data.wsUrl,
+        matchedUsers: data.matchedUsers,
+      });
+    };
+
+    socket.on('match_found', handleMatchFound);
+
+    return () => {
+      socket.off('match_found', handleMatchFound);
+    };
+  }, [socket]);
+
+  const joinMatchmaking = useCallback(async () => {
+    if (!connected) {
+      setError('WebSocket not connected');
+      return;
+    }
+
+    try {
+      setError(null);
+      setState('waiting');
+
+      const response = await api.post('/matchmaking/join');
+
+      if (response.data.status === 'MATCHED') {
+        // Instant match
+        setState('matched');
+        setMatchData(response.data.matchData);
+      } else {
+        // Waiting for others - will get WebSocket notification
+        setState('waiting');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to join matchmaking');
+      setState('idle');
+    }
+  }, [connected]);
+
+  const cancelMatchmaking = useCallback(async () => {
+    try {
+      await api.post('/matchmaking/cancel');
+      setState('idle');
+      setMatchData(null);
+      setError(null);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to cancel matchmaking');
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setState('idle');
+    setMatchData(null);
+    setError(null);
+  }, []);
+
+  return {
+    state,
+    matchData,
+    error,
+    connected,
+    joinMatchmaking,
+    cancelMatchmaking,
+    reset,
+  };
+}
+```
+
+#### 3. Matchmaking Component
 
 ```typescript
 // components/MatchmakingButton.tsx
-import { useMatchmaking } from '@/hooks/useMatchmaking';
 import { useState } from 'react';
+import { useMatchmaking } from '@/hooks/useMatchmaking';
+import { useAuth } from '@/hooks/useAuth';
 
 export function MatchmakingButton() {
-  const [selectedTopic, setSelectedTopic] = useState('math');
-  const { status, matchData, suggestions, joinMatchmaking, cancelMatchmaking } = useMatchmaking();
+  const { token } = useAuth();
+  const {
+    state,
+    matchData,
+    error,
+    connected,
+    joinMatchmaking,
+    cancelMatchmaking
+  } = useMatchmaking(token);
 
-  if (status === 'matched') {
+  if (!connected) {
     return (
-      <div>
-        <h3>Match Found! 🎉</h3>
-        <button onClick={() => joinRoom(matchData)}>
-          Join Room
+      <div className="text-center p-4">
+        <div className="spinner"></div>
+        <p>Connecting to matchmaking server...</p>
+      </div>
+    );
+  }
+
+  if (state === 'matched' && matchData) {
+    return (
+      <div className="text-center p-6 bg-green-50 rounded-lg">
+        <h3 className="text-xl font-bold text-green-700 mb-4">
+          🎉 Match Found!
+        </h3>
+        <p className="text-green-600 mb-4">
+          Room: {matchData.livekitRoomName}
+        </p>
+        <button
+          onClick={() => joinLiveKitRoom(matchData)}
+          className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700"
+        >
+          Join Video Call
         </button>
       </div>
     );
   }
 
-  if (status === 'waiting') {
+  if (state === 'waiting') {
     return (
-      <div>
-        <p>Waiting for opponent...</p>
-        <button onClick={cancelMatchmaking}>Cancel</button>
-
-        {suggestions.length > 0 && (
-          <div>
-            <h4>Or join a public room now:</h4>
-            {suggestions.map(room => (
-              <button key={room.id} onClick={() => joinPublicRoom(room.id)}>
-                {room.topic} ({room.currentMembers} online)
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="text-center p-6 bg-blue-50 rounded-lg">
+        <div className="spinner mb-4"></div>
+        <h3 className="text-lg font-semibold text-blue-700 mb-2">
+          🔍 Finding opponent...
+        </h3>
+        <p className="text-blue-600 mb-4">
+          Please wait while we find someone for you to match with
+        </p>
+        <button
+          onClick={cancelMatchmaking}
+          className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+        >
+          Cancel
+        </button>
       </div>
     );
   }
 
   return (
-    <div>
-      <select value={selectedTopic} onChange={(e) => setSelectedTopic(e.target.value)}>
-        <option value="math">Math</option>
-        <option value="coding">Coding</option>
-        <option value="english">English</option>
-        <option value="pomodoro">Pomodoro</option>
-      </select>
-      <button onClick={() => joinMatchmaking(selectedTopic)}>
-        Find Match
+    <div className="text-center p-4">
+      <button
+        onClick={joinMatchmaking}
+        disabled={!connected}
+        className="px-8 py-4 bg-blue-600 text-white text-lg font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        🎮 Find Match
       </button>
+
+      {error && (
+        <p className="mt-2 text-red-600 text-sm">{error}</p>
+      )}
     </div>
   );
 }
 ```
 
-### Public Rooms List
+#### 4. LiveKit Integration
 
 ```typescript
-// components/PublicRoomsList.tsx
-import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+// utils/livekit.ts
+import { Room, RoomEvent } from 'livekit-client';
 
-export function PublicRoomsList() {
-  const [rooms, setRooms] = useState([]);
+interface MatchData {
+  livekitRoomName: string;
+  token: string;
+  wsUrl?: string;
+}
 
-  useEffect(() => {
-    loadRooms();
-  }, []);
+export async function joinLiveKitRoom(matchData: MatchData) {
+  const room = new Room();
 
-  const loadRooms = async () => {
-    const response = await api.get('/rooms/public');
-    setRooms(response.data.rooms);
-  };
+  // Subscribe to events
+  room.on(RoomEvent.Connected, () => {
+    console.log('✅ Connected to LiveKit room');
+  });
 
-  const joinRoom = async (roomId: string) => {
-    const response = await api.post(`/rooms/${roomId}/join`);
-    const { livekitRoomName, token } = response.data;
+  room.on(RoomEvent.ParticipantConnected, (participant) => {
+    console.log('👤 Participant joined:', participant.identity);
+    // Update UI to show opponent
+  });
 
-    // Connect to LiveKit
-    connectToLiveKit(livekitRoomName, token);
-  };
+  room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+    console.log('👤 Participant left:', participant.identity);
+    // Update UI - opponent left
+  });
+
+  room.on(RoomEvent.Disconnected, (reason) => {
+    console.log('❌ Disconnected from room:', reason);
+    // Handle disconnect - maybe return to matchmaking
+  });
+
+  // Connect to room
+  const wsUrl = matchData.wsUrl || process.env.NEXT_PUBLIC_LIVEKIT_URL;
+  await room.connect(wsUrl, matchData.token);
+
+  // Enable camera and microphone
+  await room.localParticipant.enableCameraAndMicrophone();
+
+  return room;
+}
+```
+
+---
+
+## 🏪 State Management
+
+### Context Provider
+
+```typescript
+// contexts/MatchmakingContext.tsx
+import { createContext, useContext, ReactNode } from 'react';
+import { useMatchmaking } from '@/hooks/useMatchmaking';
+import { useAuth } from '@/hooks/useAuth';
+
+const MatchmakingContext = createContext<ReturnType<typeof useMatchmaking> | null>(null);
+
+export function MatchmakingProvider({ children }: { children: ReactNode }) {
+  const { token } = useAuth();
+  const matchmaking = useMatchmaking(token);
 
   return (
-    <div className="grid grid-cols-2 gap-4">
-      {rooms.map(room => (
-        <div key={room.id} className="border p-4 rounded">
-          <h3>{room.topic}</h3>
-          <p>{room.currentMembers}/{room.maxMembers} online</p>
-          <button onClick={() => joinRoom(room.id)}>
-            Join Now
-          </button>
-        </div>
-      ))}
-    </div>
+    <MatchmakingContext.Provider value={matchmaking}>
+      {children}
+    </MatchmakingContext.Provider>
   );
+}
+
+export function useMatchmakingContext() {
+  const context = useContext(MatchmakingContext);
+  if (!context) {
+    throw new Error('useMatchmakingContext must be used within MatchmakingProvider');
+  }
+  return context;
+}
+```
+
+### Usage
+
+```typescript
+// App.tsx
+function App() {
+  return (
+    <AuthProvider>
+      <MatchmakingProvider>
+        <Router>
+          <Routes>
+            <Route path="/match" element={<MatchmakingPage />} />
+            <Route path="/room/:roomId" element={<RoomPage />} />
+          </Routes>
+        </Router>
+      </MatchmakingProvider>
+    </AuthProvider>
+  );
+}
+
+// pages/MatchmakingPage.tsx
+function MatchmakingPage() {
+  const { state, matchData } = useMatchmakingContext();
+
+  useEffect(() => {
+    if (state === 'matched' && matchData) {
+      // Navigate to room
+      navigate(`/room/${matchData.roomId}`);
+    }
+  }, [state, matchData]);
+
+  return <MatchmakingButton />;
 }
 ```
 
@@ -486,207 +686,311 @@ export function PublicRoomsList() {
 ### Common Errors
 
 ```typescript
+// API Errors
 try {
-  await api.post('/matchmaking/join', { topic: 'math' });
+  await api.post('/matchmaking/join');
 } catch (error) {
   if (error.response?.status === 409) {
-    // User already in queue or room
-    alert('You are already in a room or queue');
+    if (error.response.data.message.includes('WebSocket')) {
+      // User chưa connect WebSocket
+      setError('Please wait for connection...');
+      // Retry after socket connects
+    } else if (error.response.data.message.includes('room or queue')) {
+      // User đã trong room hoặc queue
+      setError('You are already in a match');
+    }
   } else if (error.response?.status === 401) {
     // Not authenticated
-    router.push('/login');
+    redirectToLogin();
   }
 }
 ```
 
-### Disconnect Handling
+### WebSocket Errors
 
 ```typescript
-socket.on('disconnect', () => {
-  console.log('Disconnected from matchmaking');
-  // Auto cleanup: user được remove khỏi queue
-  // Không cần làm gì thêm
+socket.on('error', (data) => {
+  switch (data.message) {
+    case 'Authentication required':
+    case 'Authentication failed':
+      // Token invalid hoặc missing
+      refreshToken().then(() => {
+        socket.connect(); // Reconnect with new token
+      });
+      break;
+    default:
+      console.error('Unknown WebSocket error:', data.message);
+  }
 });
 
-socket.on('reconnect', () => {
-  console.log('Reconnected');
-  // Reload current state nếu cần
+socket.on('disconnect', (reason) => {
+  if (reason === 'io server disconnect') {
+    // Server kicked us out - probably auth issue
+    refreshToken();
+  }
+  // Auto-reconnect handled by Socket.IO
 });
+```
+
+### Network Errors
+
+```typescript
+// Retry logic for API calls
+async function retryApiCall(fn: () => Promise<any>, maxRetries = 3) {
+  let retries = 0;
+
+  while (retries < maxRetries) {
+    try {
+      return await fn();
+    } catch (error) {
+      retries++;
+
+      if (retries === maxRetries) {
+        throw error;
+      }
+
+      // Exponential backoff
+      await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retries) * 1000));
+    }
+  }
+}
+
+// Usage
+const joinMatchmaking = async () => {
+  try {
+    await retryApiCall(() => api.post('/matchmaking/join'));
+  } catch (error) {
+    setError('Failed to join matchmaking after multiple attempts');
+  }
+};
 ```
 
 ---
 
 ## ✅ Best Practices
 
-### 1. **UX: Luôn Có Đường Thoát**
+### 1. **Connection Lifecycle**
 
 ```typescript
-// ❌ BAD: Chỉ có nút "Find Match"
-<button>Find Match</button>
+// ✅ GOOD: Wait for WebSocket before enabling UI
+function MatchmakingButton() {
+  const { connected } = useMatchmakingSocket(token);
 
-// ✅ GOOD: Có cả public rooms
-<div>
-  <button>Find 1v1 Match</button>
-  <div>Or browse public rooms ↓</div>
-  <PublicRoomsList />
-</div>
-```
-
-### 2. **Show Public Rooms Khi WAITING**
-
-```typescript
-if (status === 'WAITING') {
   return (
-    <>
-      <LoadingSpinner />
-      <p>Finding opponent...</p>
-
-      {/* QUAN TRỌNG: Show suggestions */}
-      <div className="mt-4">
-        <p>Don't want to wait? Join a public room:</p>
-        {suggestions.map(room => (
-          <RoomCard key={room.id} room={room} />
-        ))}
-      </div>
-    </>
+    <button
+      disabled={!connected}
+      onClick={joinMatchmaking}
+    >
+      {connected ? 'Find Match' : 'Connecting...'}
+    </button>
   );
 }
 ```
 
-### 3. **Polling Public Rooms**
+### 2. **State Persistence**
 
 ```typescript
-// Refresh danh sách mỗi 10 giây để update currentMembers
+// ✅ GOOD: Save state to handle page refresh
 useEffect(() => {
-  const interval = setInterval(loadRooms, 10000);
-  return () => clearInterval(interval);
+  // Save current state
+  localStorage.setItem(
+    'matchmaking_state',
+    JSON.stringify({
+      state,
+      matchData,
+      timestamp: Date.now(),
+    }),
+  );
+}, [state, matchData]);
+
+// On app load, check if user was in middle of matchmaking
+useEffect(() => {
+  const saved = localStorage.getItem('matchmaking_state');
+  if (saved) {
+    const { state, matchData, timestamp } = JSON.parse(saved);
+
+    // Only restore if recent (< 5 minutes)
+    if (Date.now() - timestamp < 5 * 60 * 1000) {
+      if (state === 'waiting') {
+        // Reconnect to get match updates
+        setWaitingState();
+      } else if (state === 'matched' && matchData) {
+        // Redirect back to room
+        navigate(`/room/${matchData.roomId}`);
+      }
+    }
+
+    localStorage.removeItem('matchmaking_state');
+  }
 }, []);
 ```
 
-### 4. **Leave Room Khi Unmount**
+### 3. **Graceful Degradation**
 
 ```typescript
-useEffect(() => {
-  return () => {
-    if (currentRoomId) {
-      api.post(`/rooms/${currentRoomId}/leave`);
+// ✅ GOOD: Fallback when WebSocket fails
+function MatchmakingWithFallback() {
+  const [usePolling, setUsePolling] = useState(false);
+
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+
+    if (state === 'waiting' && usePolling) {
+      // Poll every 2 seconds as fallback
+      pollInterval = setInterval(async () => {
+        try {
+          const response = await api.get('/matchmaking/status');
+          if (response.data.status === 'MATCHED') {
+            setMatchData(response.data.matchData);
+            setState('matched');
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+        }
+      }, 2000);
     }
-  };
-}, [currentRoomId]);
-```
 
-### 5. **LiveKit Integration**
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [state, usePolling]);
 
-```typescript
-import { Room, RoomEvent } from 'livekit-client';
-
-async function connectToLiveKit(roomName: string, token: string) {
-  const room = new Room();
-
-  // Subscribe to events
-  room.on(RoomEvent.ParticipantConnected, (participant) => {
-    console.log('Participant joined:', participant.identity);
-  });
-
-  room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-    console.log('Participant left:', participant.identity);
-  });
-
-  // Connect
-  await room.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL, token);
-
-  // Enable camera & mic
-  await room.localParticipant.enableCameraAndMicrophone();
-
-  return room;
+  // Enable polling if WebSocket fails
+  useEffect(() => {
+    if (wsError && state === 'waiting') {
+      setUsePolling(true);
+    }
+  }, [wsError, state]);
 }
 ```
 
----
+### 4. **User Experience**
 
-## 🎯 Recommended User Flow
+```typescript
+// ✅ GOOD: Estimated wait time
+function WaitingIndicator() {
+  const [waitTime, setWaitTime] = useState(0);
 
-### Landing Page
+  useEffect(() => {
+    if (state === 'waiting') {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        setWaitTime(Math.floor((Date.now() - start) / 1000));
+      }, 1000);
 
+      return () => clearInterval(interval);
+    }
+  }, [state]);
+
+  return (
+    <div>
+      <p>Finding opponent...</p>
+      <p>Wait time: {waitTime}s</p>
+
+      {waitTime > 30 && (
+        <p className="text-yellow-600">
+          Taking longer than usual. You can cancel and try again.
+        </p>
+      )}
+
+      {waitTime > 60 && (
+        <button onClick={cancelAndRetry}>
+          Cancel & Retry
+        </button>
+      )}
+    </div>
+  );
+}
 ```
-┌─────────────────────────────────────┐
-│  🏠 Study Together                  │
-├─────────────────────────────────────┤
-│                                     │
-│  [🎯 Quick Match (1v1)]            │
-│                                     │
-│  ──── or ────                       │
-│                                     │
-│  📚 Public Study Rooms              │
-│  ┌─────────────────────────────┐   │
-│  │ 📐 Math (3 online)          │   │
-│  │ 💻 Coding (1 online)        │   │
-│  │ 🗣️ English (5 online)       │   │
-│  │ 🍅 Pomodoro (2 online)      │   │
-│  └─────────────────────────────┘   │
-└─────────────────────────────────────┘
-```
 
-### When User Clicks "Quick Match"
+### 5. **Resource Cleanup**
 
-```
-┌─────────────────────────────────────┐
-│  Choose Your Topic                  │
-│  ○ Math                             │
-│  ○ Coding                           │
-│  ○ English                          │
-│  ○ Pomodoro                         │
-│                                     │
-│  [Find Match]                       │
-└─────────────────────────────────────┘
-        ↓
-┌─────────────────────────────────────┐
-│  🔍 Finding opponent...             │
-│  ⏱️ Waiting time: 5s                │
-│                                     │
-│  [Cancel]                           │
-│                                     │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━          │
-│                                     │
-│  💡 Don't want to wait?             │
-│  Join a public room now:            │
-│                                     │
-│  [📐 Math Room (3 online)] →       │
-│  [💻 Coding Room (1 online)] →     │
-└─────────────────────────────────────┘
+```typescript
+// ✅ GOOD: Cleanup on unmount
+useEffect(() => {
+  return () => {
+    // Cancel matchmaking if component unmounts while waiting
+    if (state === 'waiting') {
+      api.post('/matchmaking/cancel').catch(console.error);
+    }
+
+    // Disconnect WebSocket
+    if (socket?.connected) {
+      socket.disconnect();
+    }
+  };
+}, []);
 ```
 
 ---
 
 ## 🚀 Quick Start Checklist
 
-- [ ] Install `socket.io-client` và `livekit-client`
-- [ ] Setup WebSocket connection với `/matchmaking` namespace
-- [ ] Implement `useMatchmaking()` hook
-- [ ] Create Public Rooms list component
-- [ ] Add "suggestions" UI khi WAITING
-- [ ] Integrate LiveKit room connection
-- [ ] Test flow: Join Match → WAITING → Click suggestion → Join public room
-- [ ] Test flow: Join Match → MATCHED → Join private room
-- [ ] Test flow: Join Public Room directly
-- [ ] Handle leave room on unmount
+- [ ] Install dependencies: `socket.io-client`, `livekit-client`
+- [ ] Setup environment variables: `NEXT_PUBLIC_WS_URL`, `NEXT_PUBLIC_LIVEKIT_URL`
+- [ ] Implement authentication hook with JWT token
+- [ ] Create `useMatchmakingSocket` hook for WebSocket connection
+- [ ] Create `useMatchmaking` hook for matchmaking logic
+- [ ] Build UI components: MatchmakingButton, WaitingIndicator
+- [ ] Integrate LiveKit for video calls
+- [ ] Test flow: Connect → Find Match → Wait → Get match_found → Join LiveKit
+- [ ] Test error cases: No internet, token expired, server down
+- [ ] Implement cleanup on unmount and page refresh
+- [ ] Add loading states and error messages
+
+---
+
+## 🐛 Debugging Guide
+
+### Check WebSocket Connection
+
+```javascript
+// In browser console:
+socket.connected; // true/false
+socket.id; // socket ID
+socket.auth; // should have token
+```
+
+### Check User State
+
+```http
+GET /matchmaking/stats
+```
+
+### Common Issues
+
+1. **"Please connect to WebSocket before joining matchmaking"**
+   - WebSocket chưa connect xong
+   - Wait for `connected: true` trước khi call API
+
+2. **"User already in a room or queue"**
+   - User đã trong trạng thái WAITING hoặc IN_ROOM
+   - Check state trước khi join
+
+3. **WebSocket không connect**
+   - Check JWT token hợp lệ
+   - Check CORS settings
+   - Check network firewall
+
+4. **match_found không nhận được**
+   - Check WebSocket still connected
+   - Check user đã join đúng namespace `/matchmaking`
 
 ---
 
 ## 📞 Support
 
-Nếu có vấn đề, check:
-
-1. **WebSocket không connect:** Verify JWT token hợp lệ
-2. **Matchmaking không tìm thấy:** Check topic có đúng không (`math`, `coding`, `english`, `pomodoro`)
-3. **LiveKit không connect:** Verify `NEXT_PUBLIC_LIVEKIT_URL` đúng
-4. **Room full:** Public rooms có `maxMembers = 10`
-
 **Debug endpoints:**
 
-- `GET /api/matchmaking/stats` - Xem queue length
-- `GET /api/rooms/public` - Xem rooms hiện tại
+- `GET /matchmaking/stats` - Online users count
+- WebSocket events: `connect`, `disconnect`, `error`
+
+**Logs to check:**
+
+- WebSocket connection/disconnection
+- API call responses
+- match_found event payload
 
 ---
 
-**Happy coding! 🚀**
+**Happy matching! 🎮**
