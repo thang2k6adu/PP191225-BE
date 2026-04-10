@@ -50,9 +50,15 @@ class EnvironmentVariables {
   @IsString()
   FIREBASE_CLIENT_EMAIL: string;
 
+  FIREBASE_PRIVATE_KEY: string;
+
   @IsOptional()
   @IsString()
-  FIREBASE_PRIVATE_KEY: string;
+  RESEND_API_KEY: string;
+
+  @IsOptional()
+  @IsString()
+  MAIL_FROM: string;
 }
 
 export function validate(config: Record<string, unknown>) {

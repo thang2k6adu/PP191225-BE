@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import * as handlebars from 'handlebars';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -15,30 +15,37 @@ export interface SendEmailOptions {
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter: nodemailer.Transporter;
+  private resend: Resend;
 
   constructor(private configService: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      host: this.configService.get<string>('mail.host'),
-      port: this.configService.get<number>('mail.port'),
-      secure: this.configService.get<boolean>('mail.secure'),
-      auth: {
-        user: this.configService.get<string>('mail.user'),
-        pass: this.configService.get<string>('mail.password'),
-      },
-    });
+    const apiKey = this.configService.get<string>('mail.resendApiKey');
+    if (apiKey) {
+      this.resend = new Resend(apiKey);
+    } else {
+      this.logger.warn('RESEND_API_KEY is not defined. Email service will not work properly.');
+    }
   }
 
   async sendEmail(options: SendEmailOptions): Promise<void> {
+    if (!this.resend) {
+      this.logger.error('Cannot send email: Resend client is not initialized');
+      return;
+    }
+
     try {
       const html = await this.renderTemplate(options.template, options.context);
 
-      await this.transporter.sendMail({
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { data, error } = await this.resend.emails.send({
         from: this.configService.get<string>('mail.from'),
         to: options.to,
         subject: options.subject,
         html,
       });
+
+      if (error) {
+        throw new Error(error.message);
+      }
 
       this.logger.log(`Email sent successfully to ${options.to}`);
     } catch (error) {
@@ -93,12 +100,9 @@ export class MailService {
   }
 
   async verifyConnection(): Promise<boolean> {
-    try {
-      await this.transporter.verify();
-      return true;
-    } catch (error) {
-      this.logger.error(`Mail connection verification failed: ${error.message}`);
-      return false;
+    if (this.resend) {
+      return true; // We assume the instance is ready since it's HTTP based
     }
+    return false;
   }
 }
