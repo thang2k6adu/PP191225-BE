@@ -5,6 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
@@ -180,6 +181,29 @@ export class AuthController {
   })
   async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<RefreshTokenResponse> {
     return this.authService.refreshToken(refreshTokenDto.refreshToken);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset link' })
+  @ApiResponse({
+    status: 200,
+    description: 'Password reset request processed successfully',
+    schema: {
+      example: {
+        error: false,
+        code: 0,
+        message: 'Success',
+        data: {
+          message: 'If an account with this email exists, a password reset link has been sent.',
+        },
+        traceId: 'VIHOLaKaWe',
+      },
+    },
+  })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+    return this.authService.resetPassword(resetPasswordDto);
   }
 
   @UseGuards(JwtAuthGuard)

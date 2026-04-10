@@ -13,6 +13,8 @@ import { RegisterDto } from './dto/register.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { AuthResponse, FirebaseLoginResponse } from '@/common/interfaces/api-response.interface';
 import { FirebaseService } from './services/firebase.service';
+import { MailService } from '../mail/mail.service';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import * as admin from 'firebase-admin';
 
 @Injectable()
@@ -22,6 +24,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private firebaseService: FirebaseService,
+    private mailService: MailService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -87,6 +90,43 @@ export class AuthService {
     });
 
     return this.generateTokens(user);
+  }
+
+  async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: resetPasswordDto.email },
+    });
+
+    if (!user || !user.isActive) {
+      // Prevent email enumeration
+      return {
+        message: 'If an account with this email exists, a password reset link has been sent.',
+      };
+    }
+
+    try {
+      const firebaseResetLink = await this.firebaseService.generatePasswordResetLink(user.email);
+      const frontendResetUrl = this.configService.get<string>('app.frontendResetUrl');
+      const urlObj = new URL(firebaseResetLink);
+      const resetLink = `${frontendResetUrl}${urlObj.search}`;
+
+      await this.mailService.sendEmail({
+        to: user.email,
+        subject: 'Password Reset Request',
+        template: 'reset-password',
+        context: {
+          firstName: user.firstName || 'User',
+          resetLink,
+          expiresIn: '1 hour',
+        },
+      });
+    } catch (error) {
+      console.error('Failed to process reset password flow', error);
+    }
+
+    return {
+      message: 'If an account with this email exists, a password reset link has been sent.',
+    };
   }
 
   async refreshToken(refreshToken: string): Promise<{ accessToken: string; expiresIn: number }> {

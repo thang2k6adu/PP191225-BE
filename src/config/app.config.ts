@@ -9,4 +9,6 @@ export default registerAs('app', () => ({
   port: parseInt(process.env.PORT || '3000', 10),
   name: process.env.APP_NAME || 'nest-boilerplate',
   publicTopics: PUBLIC_TOPICS,
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:8000',
+  frontendResetUrl: process.env.FRONTEND_RESET_URL || 'http://localhost:8000/reset-password',
 }));

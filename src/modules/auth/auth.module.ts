@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { PrismaService } from '@/database/prisma.service';
 import { FirebaseService } from './services/firebase.service';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { FirebaseService } from './services/firebase.service';
       }),
       inject: [ConfigService],
     }),
+    MailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, FirebaseService, JwtStrategy, LocalStrategy, PrismaService],
