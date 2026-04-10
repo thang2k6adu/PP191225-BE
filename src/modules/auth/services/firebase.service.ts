@@ -69,4 +69,20 @@ export class FirebaseService implements OnModuleInit {
       throw new UnauthorizedException('Failed to generate password reset link');
     }
   }
+
+  async generateEmailVerificationLink(email: string): Promise<string> {
+    if (!this.firebaseApp) {
+      throw new UnauthorizedException('Firebase is not configured');
+    }
+
+    try {
+      const link = await this.firebaseApp.auth().generateEmailVerificationLink(email);
+      return link;
+    } catch (error: any) {
+      if (error.code === 'auth/user-not-found') {
+        throw new UnauthorizedException('User not found in Firebase');
+      }
+      throw new UnauthorizedException('Failed to generate email verification link');
+    }
+  }
 }

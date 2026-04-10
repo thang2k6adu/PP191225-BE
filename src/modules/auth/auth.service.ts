@@ -15,6 +15,7 @@ import { AuthResponse, FirebaseLoginResponse } from '@/common/interfaces/api-res
 import { FirebaseService } from './services/firebase.service';
 import { MailService } from '../mail/mail.service';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import * as admin from 'firebase-admin';
 
 @Injectable()
@@ -129,6 +130,36 @@ export class AuthService {
     };
   }
 
+  async sendVerificationEmail(verifyEmailDto: VerifyEmailDto): Promise<{ message: string }> {
+    try {
+      const firebaseVerifyLink = await this.firebaseService.generateEmailVerificationLink(
+        verifyEmailDto.email,
+      );
+
+      // Attempt to retrieve user info from DB for personalized email
+      const user = await this.prisma.user.findUnique({
+        where: { email: verifyEmailDto.email },
+      });
+
+      await this.mailService.sendEmail({
+        to: verifyEmailDto.email,
+        subject: 'Verify your Email',
+        template: 'verify-email',
+        context: {
+          firstName: user?.firstName || 'User',
+          verifyLink: firebaseVerifyLink,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to process send verification email flow', error);
+      // We still return true mathematically to prevent enumerated enumeration of registered accounts
+    }
+
+    return {
+      message: 'Verification email sent successfully.',
+    };
+  }
+
   async refreshToken(refreshToken: string): Promise<{ accessToken: string; expiresIn: number }> {
     try {
       await this.jwtService.verifyAsync(refreshToken, {
@@ -196,6 +227,10 @@ export class AuthService {
     const email = decodedToken.email;
     const name = decodedToken.name || decodedToken.display_name || null;
     const avatar = decodedToken.picture || decodedToken.avatar_url || null;
+
+    if (!decodedToken.email_verified) {
+      throw new ForbiddenException('Email chưa được xác minh');
+    }
 
     if (!email) {
       throw new UnauthorizedException('Email is required');

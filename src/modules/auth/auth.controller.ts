@@ -6,6 +6,7 @@ import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
@@ -204,6 +205,31 @@ export class AuthController {
   })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
     return this.authService.resetPassword(resetPasswordDto);
+  }
+
+  @Public()
+  @Post('send-verification-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request email verification link' })
+  @ApiResponse({
+    status: 200,
+    description: 'Email verification request processed successfully',
+    schema: {
+      example: {
+        error: false,
+        code: 0,
+        message: 'Success',
+        data: {
+          message: 'Verification email sent successfully.',
+        },
+        traceId: 'VERIFYMAIL',
+      },
+    },
+  })
+  async sendVerificationEmail(
+    @Body() verifyEmailDto: VerifyEmailDto,
+  ): Promise<{ message: string }> {
+    return this.authService.sendVerificationEmail(verifyEmailDto);
   }
 
   @UseGuards(JwtAuthGuard)
