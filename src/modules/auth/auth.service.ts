@@ -136,9 +136,24 @@ export class AuthService {
         verifyEmailDto.email,
       );
 
-      // Attempt to retrieve user info from DB for personalized email
-      const user = await this.prisma.user.findUnique({
+      // Upsert user in DB so firstName/lastName are stored even before login.
+      // This way, when the user verifies their email and logs in for the first time,
+      // the record already has the correct name — no need to pass it again at login.
+      const user = await (this.prisma.user.upsert as any)({
         where: { email: verifyEmailDto.email },
+        create: {
+          email: verifyEmailDto.email,
+          firstName: verifyEmailDto.firstName || null,
+          lastName: verifyEmailDto.lastName || null,
+          password: null, // Firebase auth — no local password
+          isActive: true,
+        },
+        update: {
+          // Only fill in name if it's missing in the DB
+          ...(verifyEmailDto.firstName ? { firstName: verifyEmailDto.firstName } : {}),
+          ...(verifyEmailDto.lastName ? { lastName: verifyEmailDto.lastName } : {}),
+        },
+        select: { firstName: true },
       });
 
       await this.mailService.sendEmail({
@@ -146,13 +161,13 @@ export class AuthService {
         subject: 'Verify your Email',
         template: 'verify-email',
         context: {
-          firstName: user?.firstName || 'User',
+          firstName: user?.firstName || verifyEmailDto.firstName || 'User',
           verifyLink: firebaseVerifyLink,
         },
       });
     } catch (error) {
       console.error('Failed to process send verification email flow', error);
-      // We still return true mathematically to prevent enumerated enumeration of registered accounts
+      // Return success anyway to prevent email enumeration
     }
 
     return {
@@ -204,10 +219,14 @@ export class AuthService {
   }
 
   async firebaseLogin(firebaseLoginDto: FirebaseLoginDto): Promise<FirebaseLoginResponse> {
-    // Extract optional device info for future multi-device management
-    const { idToken, deviceId, platform } = firebaseLoginDto;
+    const {
+      idToken,
+      deviceId,
+      platform,
+      firstName: dtoFirstName,
+      lastName: dtoLastName,
+    } = firebaseLoginDto;
 
-    // Log device info if provided (for debugging/testing)
     if (deviceId || platform) {
       console.log('[Firebase Login] Device info:', { deviceId, platform });
     }
@@ -225,7 +244,13 @@ export class AuthService {
 
     const firebaseUid = decodedToken.uid;
     const email = decodedToken.email;
-    const name = decodedToken.name || decodedToken.display_name || null;
+
+    // Name resolution priority:
+    //   1. Firebase token (Google/Facebook/GitHub OAuth provides display name)
+    //   2. DTO fields sent by client (email/password flow can pass firstName/lastName explicitly)
+    const tokenName = decodedToken.name || decodedToken.display_name || null;
+    const resolvedFirstName = tokenName?.split(' ')[0] || dtoFirstName || null;
+    const resolvedLastName = tokenName?.split(' ').slice(1).join(' ') || dtoLastName || null;
     const avatar = decodedToken.picture || decodedToken.avatar_url || null;
 
     if (!decodedToken.email_verified) {
@@ -302,10 +327,10 @@ export class AuthService {
         data: {
           email,
           firebaseUid,
-          firstName: name?.split(' ')[0] || null,
-          lastName: name?.split(' ').slice(1).join(' ') || null,
+          firstName: resolvedFirstName,
+          lastName: resolvedLastName,
           avatar,
-          password: null, // Firebase users don't have password
+          password: null,
         },
         select: userSelect,
       });
@@ -328,10 +353,12 @@ export class AuthService {
         updateData.avatar = avatar;
       }
 
-      if (name && (!existingUser.firstName || !existingUser.lastName)) {
-        const nameParts = name.split(' ');
-        updateData.firstName = nameParts[0] || existingUser.firstName;
-        updateData.lastName = nameParts.slice(1).join(' ') || existingUser.lastName;
+      // Update name if not yet set — prefer token name, fall back to DTO fields
+      if (!existingUser.firstName && resolvedFirstName) {
+        updateData.firstName = resolvedFirstName;
+      }
+      if (!existingUser.lastName && resolvedLastName) {
+        updateData.lastName = resolvedLastName;
       }
 
       user = await this.prisma.user.update({
