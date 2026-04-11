@@ -23,6 +23,11 @@ export class UpdateUserDto {
   @IsOptional()
   lastName?: string;
 
+  @ApiProperty({ example: 'https://example.com/avatar.jpg', required: false })
+  @IsString()
+  @IsOptional()
+  avatar?: string;
+
   @ApiProperty({ example: 'Học viện Công nghệ Bưu chính Viễn thông', required: false })
   @IsString()
   @IsOptional()

@@ -127,6 +127,7 @@ export class UsersService {
       email: updateUserDto.email,
       firstName: updateUserDto.firstName,
       lastName: updateUserDto.lastName,
+      avatar: updateUserDto.avatar,
       work: updateUserDto.work,
       major: updateUserDto.major,
       bio: updateUserDto.bio,

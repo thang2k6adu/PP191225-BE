@@ -3,6 +3,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import * as express from 'express';
+import { resolve } from 'path';
 import { AppModule } from './app.module';
 import { SocketIoAdapter } from './common/adapters/socket-io.adapter';
 
@@ -13,6 +15,12 @@ async function bootstrap() {
 
   // Security
   app.use(helmet());
+
+  // Serve local uploaded files (avatars/images/files)
+  const localUploadDestination =
+    configService.get<string>('storage.local.destination') || './uploads';
+  const uploadRoot = resolve(process.cwd(), localUploadDestination);
+  app.use('/uploads', express.static(uploadRoot));
 
   // CORS configuration
   const corsOrigin =
@@ -80,7 +88,7 @@ async function bootstrap() {
 
   const port = configService.get<number>('app.port');
   await app.listen(port, '0.0.0.0');
-  
+
   console.log(`🚀 Application is running on: http://localhost:${port}/api`);
   console.log(`📚 Swagger documentation: http://localhost:${port}/api/docs`);
 }
