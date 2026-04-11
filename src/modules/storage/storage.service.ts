@@ -1,17 +1,25 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { S3Provider } from './providers/s3.provider';
 import { LocalProvider } from './providers/local.provider';
-import * as sharp from 'sharp';
+import { PrismaService } from '@/database/prisma.service';
+import sharp from 'sharp';
 
 export interface UploadFileOptions {
-  file: Express.Multer.File;
+  file: any;
   folder?: string;
+  userId?: string;
   resize?: { width?: number; height?: number };
   quality?: number;
 }
 
 export interface UploadResult {
+  id: string;
   url: string;
   key: string;
   size: number;
@@ -21,14 +29,16 @@ export interface UploadResult {
 @Injectable()
 export class StorageService {
   private provider: S3Provider | LocalProvider;
+  private providerType: string;
 
   constructor(
     private configService: ConfigService,
     private s3Provider: S3Provider,
     private localProvider: LocalProvider,
+    private prisma: PrismaService,
   ) {
-    const providerType = this.configService.get<string>('storage.provider');
-    this.provider = providerType === 's3' ? this.s3Provider : this.localProvider;
+    this.providerType = this.configService.get<string>('storage.provider') || 'local';
+    this.provider = this.providerType === 's3' ? this.s3Provider : this.localProvider;
   }
 
   async uploadFile(options: UploadFileOptions): Promise<UploadResult> {
@@ -43,22 +53,67 @@ export class StorageService {
 
     const key = this.generateKey(options.file.originalname, options.folder);
 
-    return this.provider.upload({
+    // Upload to storage provider
+    const result = await this.provider.upload({
       buffer: fileBuffer,
       key,
       mimetype: options.file.mimetype,
     });
+
+    // Save record to database
+    const fileRecord = await this.prisma.file.create({
+      data: {
+        key: result.key,
+        url: result.url,
+        filename: options.file.originalname,
+        mimetype: result.mimetype,
+        size: result.size,
+        provider: this.providerType,
+        folder: options.folder,
+        userId: options.userId,
+      },
+    });
+
+    return {
+      id: fileRecord.id,
+      url: result.url,
+      key: result.key,
+      size: result.size,
+      mimetype: result.mimetype,
+    };
   }
 
-  async deleteFile(key: string): Promise<void> {
-    await this.provider.delete(key);
+  async deleteFile(fileId: string, user: any): Promise<void> {
+    // 1. Find file in DB
+    const fileRecord = await this.prisma.file.findUnique({
+      where: { id: fileId },
+    });
+
+    if (!fileRecord) {
+      throw new NotFoundException('File not found');
+    }
+
+    // 2. Check authorization
+    // Admin can delete any file. User can only delete their own file.
+    if (user.role !== 'ADMIN' && fileRecord.userId !== user.id) {
+      throw new ForbiddenException('You do not have permission to delete this file');
+    }
+
+    // 3. Delete file from storage
+    try {
+      await this.provider.delete(fileRecord.key);
+    } catch (error) {
+      // Log error but proceed to delete from DB or handle accordingly
+      console.error(`Failed to delete file from storage: ${fileRecord.key}`, error);
+    }
+
+    // 4. Delete record from DB
+    await this.prisma.file.delete({
+      where: { id: fileId },
+    });
   }
 
-  async getSignedUrl(key: string, expiresIn?: number): Promise<string> {
-    return this.provider.getSignedUrl(key, expiresIn);
-  }
-
-  private validateFile(file: Express.Multer.File): void {
+  private validateFile(file: any): void {
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
       throw new BadRequestException('File size exceeds maximum limit of 10MB');

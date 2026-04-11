@@ -1,12 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 export interface UploadOptions {
   buffer: Buffer;
@@ -21,7 +15,7 @@ export class S3Provider {
 
   constructor(private configService: ConfigService) {
     this.s3Client = new S3Client({
-      region: this.configService.get<string>('storage.s3.region'),
+      region: this.configService.get<string>('storage.s3.region') || 'us-east-1',
       credentials: {
         accessKeyId: this.configService.get<string>('storage.s3.accessKeyId') || '',
         secretAccessKey: this.configService.get<string>('storage.s3.secretAccessKey') || '',
@@ -59,14 +53,5 @@ export class S3Provider {
     });
 
     await this.s3Client.send(command);
-  }
-
-  async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    });
-
-    return getSignedUrl(this.s3Client, command, { expiresIn });
   }
 }
