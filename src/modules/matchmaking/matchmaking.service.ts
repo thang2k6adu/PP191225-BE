@@ -87,11 +87,20 @@ export class MatchmakingService {
     this.logger.log(`User registered: ${userId} with socket ${socketId} on ${this.instanceId}`);
   }
 
-  async unregisterUser(userId: string): Promise<void> {
+  async unregisterUser(userId: string, socketId: string): Promise<void> {
+    const currentSocketId = this.onlineUsers.get(userId);
+
+    if (currentSocketId && currentSocketId !== socketId) {
+      this.logger.warn(
+        `Ignoring stale disconnect for user ${userId}: socket ${socketId}, current socket ${currentSocketId}`,
+      );
+      return;
+    }
+
     this.onlineUsers.delete(userId);
 
     // Unregister from Redis
-    await this.redisService.unregisterSocket(userId).catch((error) => {
+    await this.redisService.unregisterSocket(userId, socketId).catch((error) => {
       this.logger.error(`Failed to unregister socket in Redis: ${error.message}`);
     });
 
@@ -101,7 +110,7 @@ export class MatchmakingService {
       this.logger.log(`User ${userId} removed from queue on disconnect`);
     }
 
-    this.logger.log(`User unregistered: ${userId}`);
+    this.logger.log(`User unregistered: ${userId} from socket ${socketId}`);
   }
 
   async cancelMatchmaking(userId: string): Promise<void> {

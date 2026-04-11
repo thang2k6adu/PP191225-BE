@@ -75,7 +75,7 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
 
     this.logger.log(`Client ${client.id} (user ${userId}) disconnected`);
 
-    await this.matchmakingService.unregisterUser(userId);
+    await this.matchmakingService.unregisterUser(userId, client.id);
     this.logger.log(`User ${userId} unregistered and cleaned up`);
   }
 

@@ -242,10 +242,25 @@ export class MatchmakingRedisService {
     );
   }
 
-  async unregisterSocket(userId: string): Promise<void> {
+  async unregisterSocket(userId: string, socketId?: string): Promise<void> {
     if (!(await this.ensureConnection())) return;
 
     const key = `${this.SOCKET_KEY_PREFIX}${userId}`;
+    if (!socketId) {
+      await this.redis!.del(key);
+      return;
+    }
+
+    const current = await this.redis!.get(key);
+    if (!current) {
+      return;
+    }
+
+    const socketInfo = JSON.parse(current) as { socketId: string; instanceId: string };
+    if (socketInfo.socketId !== socketId) {
+      return;
+    }
+
     await this.redis!.del(key);
   }
 
