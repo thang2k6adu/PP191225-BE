@@ -253,7 +253,14 @@ export class AuthService {
     const resolvedLastName = tokenName?.split(' ').slice(1).join(' ') || dtoLastName || null;
     const avatar = decodedToken.picture || decodedToken.avatar_url || null;
 
-    if (!decodedToken.email_verified) {
+    // Determine the sign-in provider from the Firebase token.
+    // OAuth providers (Google, Facebook, GitHub, etc.) act as trusted identity
+    // sources — the email is considered verified by the provider itself.
+    // Only accounts created via email/password need explicit email verification.
+    const signInProvider = decodedToken.firebase?.sign_in_provider || 'password';
+    const isOAuthProvider = signInProvider !== 'password';
+
+    if (!isOAuthProvider && !decodedToken.email_verified) {
       throw new ForbiddenException('Email chưa được xác minh');
     }
 
