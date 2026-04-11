@@ -21,6 +21,9 @@ model User {
   deletedAt        DateTime?
   avatar           String?
   firebaseUid      String?           @unique
+  work             String?
+  major            String?
+  bio              String?
   lastLogin        DateTime?
   status           UserStatus        @default(ONLINE)
   files            File[]

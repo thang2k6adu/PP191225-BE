@@ -93,6 +93,9 @@ export class UsersService {
         firstName: true,
         lastName: true,
         avatar: true,
+        work: true,
+        major: true,
+        bio: true,
         role: true,
         isActive: true,
         createdAt: true,
@@ -124,6 +127,9 @@ export class UsersService {
       email: updateUserDto.email,
       firstName: updateUserDto.firstName,
       lastName: updateUserDto.lastName,
+      work: updateUserDto.work,
+      major: updateUserDto.major,
+      bio: updateUserDto.bio,
     };
 
     if (updateUserDto.password) {
@@ -138,6 +144,10 @@ export class UsersService {
         email: true,
         firstName: true,
         lastName: true,
+        avatar: true,
+        work: true,
+        major: true,
+        bio: true,
         role: true,
         isActive: true,
         createdAt: true,
