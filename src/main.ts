@@ -20,6 +20,11 @@ async function bootstrap() {
   const localUploadDestination =
     configService.get<string>('storage.local.destination') || './uploads';
   const uploadRoot = resolve(process.cwd(), localUploadDestination);
+  app.use('/uploads', (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    next();
+  });
   app.use('/uploads', express.static(uploadRoot));
 
   // CORS configuration
