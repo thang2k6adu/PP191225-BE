@@ -14,6 +14,8 @@ import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
 import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
 import { TaskStatus } from '@prisma/client';
 import { TrackingService } from '../tracking/tracking.service';
+import { CacheService } from '@/common/services/cache.service';
+import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
 
 @Injectable()
 export class TasksService {
@@ -21,7 +23,17 @@ export class TasksService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => TrackingService))
     private trackingService: TrackingService,
+    private cacheService: CacheService,
   ) {}
+
+  private async invalidateUserTaskCache(userId: string, taskId?: string): Promise<void> {
+    await this.cacheService.del(CacheKeys.tasks.active(userId));
+    // Cứ nghĩ tới 1 pattern thì thường là list pattern (vì có nhiều page cho 1 list)
+    await this.cacheService.invalidatePattern(CacheKeys.tasks.listPattern(userId));
+    if (taskId) {
+      await this.cacheService.del(CacheKeys.tasks.detail(userId, taskId));
+    }
+  }
 
   async create(createTaskDto: CreateTaskDto, userId: string) {
     const task = await this.prisma.task.create({
@@ -46,116 +58,142 @@ export class TasksService {
       },
     });
 
+    await this.invalidateUserTaskCache(userId, task.id);
+
     return task;
   }
 
   async findAll(query: QueryTasksDto, userId: string): Promise<PaginatedResponse<any>> {
-    const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+    const cacheKey = CacheKeys.tasks.list(userId, query);
 
-    const where: any = {
-      userId, // Users can only see their own tasks
-    };
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
 
-    // Status filter
-    if (query.status) {
-      where.status = query.status;
-    }
+        const where: any = {
+          userId, // Users can only see their own tasks
+        };
 
-    // Active filter
-    if (query.isActive !== undefined) {
-      where.isActive = query.isActive;
-    }
+        // Status filter
+        if (query.status) {
+          where.status = query.status;
+        }
 
-    // Search filter
-    if (query.search) {
-      where.name = {
-        contains: query.search,
-        mode: 'insensitive' as const,
-      };
-    }
+        // Active filter
+        if (query.isActive !== undefined) {
+          where.isActive = query.isActive;
+        }
 
-    const [tasks, total] = await Promise.all([
-      this.prisma.task.findMany({
-        where,
-        skip,
-        take,
-        select: {
-          id: true,
-          name: true,
-          estimateHours: true,
-          deadline: true,
-          status: true,
-          isActive: true,
-          progress: true,
-          totalTimeSpent: true,
-          userId: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: [
-          { isActive: 'desc' }, // Active tasks first
-          { createdAt: 'desc' },
-        ],
-      }),
-      this.prisma.task.count({ where }),
-    ]);
+        // Search filter
+        if (query.search) {
+          where.name = {
+            contains: query.search,
+            mode: 'insensitive' as const,
+          };
+        }
 
-    return paginate(tasks, total, page, limit);
+        const [tasks, total] = await Promise.all([
+          this.prisma.task.findMany({
+            where,
+            skip,
+            take,
+            select: {
+              id: true,
+              name: true,
+              estimateHours: true,
+              deadline: true,
+              status: true,
+              isActive: true,
+              progress: true,
+              totalTimeSpent: true,
+              userId: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+            orderBy: [
+              { isActive: 'desc' }, // Active tasks first
+              { createdAt: 'desc' },
+            ],
+          }),
+          this.prisma.task.count({ where }),
+        ]);
+
+        return paginate(tasks, total, page, limit);
+      },
+      CacheTTL.taskList,
+    );
   }
 
   async findOne(id: string, userId: string) {
-    const task = await this.prisma.task.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        estimateHours: true,
-        deadline: true,
-        status: true,
-        isActive: true,
-        progress: true,
-        totalTimeSpent: true,
-        userId: true,
-        createdAt: true,
-        updatedAt: true,
+    const cacheKey = CacheKeys.tasks.detail(userId, id);
+
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const task = await this.prisma.task.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            name: true,
+            estimateHours: true,
+            deadline: true,
+            status: true,
+            isActive: true,
+            progress: true,
+            totalTimeSpent: true,
+            userId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        if (!task) {
+          throw new NotFoundException('Task not found');
+        }
+
+        // Check ownership
+        if (task.userId !== userId) {
+          throw new ForbiddenException('You do not have permission to access this task');
+        }
+
+        return task;
       },
-    });
-
-    if (!task) {
-      throw new NotFoundException('Task not found');
-    }
-
-    // Check ownership
-    if (task.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to access this task');
-    }
-
-    return task;
+      CacheTTL.taskDetail,
+    );
   }
 
   async findActive(userId: string) {
-    const task = await this.prisma.task.findFirst({
-      where: {
-        userId,
-        isActive: true,
-        status: TaskStatus.ACTIVE,
-      },
-      select: {
-        id: true,
-        name: true,
-        estimateHours: true,
-        deadline: true,
-        status: true,
-        isActive: true,
-        progress: true,
-        totalTimeSpent: true,
-        userId: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const cacheKey = CacheKeys.tasks.active(userId);
 
-    return task;
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const task = await this.prisma.task.findFirst({
+          where: {
+            userId,
+            isActive: true,
+            status: TaskStatus.ACTIVE,
+          },
+          select: {
+            id: true,
+            name: true,
+            estimateHours: true,
+            deadline: true,
+            status: true,
+            isActive: true,
+            progress: true,
+            totalTimeSpent: true,
+            userId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        return task;
+      },
+      CacheTTL.taskActive,
+    );
   }
 
   async activate(id: string, userId: string) {
@@ -216,13 +254,11 @@ export class TasksService {
       };
     });
 
+    await this.invalidateUserTaskCache(userId, id);
+
     return result;
   }
 
-  /**
-   * Check if task should be auto-completed based on progress
-   * Called by TrackingService when session is stopped
-   */
   async checkAndCompleteIfNeeded(taskId: string, progress: number, tx?: any) {
     const prisma = tx || this.prisma;
 
@@ -247,17 +283,23 @@ export class TasksService {
         },
       });
 
-      return true; // Task was completed
+      const ownerTask = await prisma.task.findUnique({
+        where: { id: taskId },
+        select: { userId: true },
+      });
+      if (ownerTask?.userId) {
+        await this.invalidateUserTaskCache(ownerTask.userId, taskId);
+      }
+
+      return true;
     }
 
-    return false; // Task not completed
+    return false;
   }
 
   async complete(id: string, userId: string) {
-    // Find task and verify ownership
     await this.findOne(id, userId);
 
-    // Use transaction to update both task and tracking
     const result = await this.prisma.$transaction(async (tx) => {
       // Get task with all fields needed for calculation
       const task = await tx.task.findUnique({
@@ -338,6 +380,8 @@ export class TasksService {
       return updatedTask;
     });
 
+    await this.invalidateUserTaskCache(userId, id);
+
     return result;
   }
 
@@ -386,6 +430,8 @@ export class TasksService {
       },
     });
 
+    await this.invalidateUserTaskCache(userId, id);
+
     return updatedTask;
   }
 
@@ -396,6 +442,8 @@ export class TasksService {
     await this.prisma.task.delete({
       where: { id },
     });
+
+    await this.invalidateUserTaskCache(userId, id);
 
     return { message: 'Task deleted successfully' };
   }

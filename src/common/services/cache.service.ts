@@ -34,20 +34,45 @@ export class CacheService {
   }
 
   async invalidatePattern(pattern: string): Promise<void> {
-    // Note: This requires cache store that supports pattern matching
-    // For Redis, you might need to use ioredis directly
+    const client = this.getRedisClient();
+    if (!client) return;
+
+    const pipeline = client.pipeline();
     const keys = await this.getKeysByPattern(pattern);
+
     for (const key of keys) {
-      await this.del(key);
+      pipeline.del(key);
     }
+
+    await pipeline.exec();
   }
 
-  private async getKeysByPattern(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _pattern: string,
-  ): Promise<string[]> {
-    // This is a simplified version
-    // In production, use Redis SCAN command for pattern matching
+  private getRedisClient(): any {
+    const store = (this.cacheManager as any)?.stores?.[0] || (this.cacheManager as any)?.store;
+    return (store as any)?.client;
+  }
+
+  private async getKeysByPattern(pattern: string): Promise<string[]> {
+    const client = this.getRedisClient();
+    if (!client) {
+      return [];
+    }
+
+    if (typeof client.scanIterator === 'function') {
+      const keys: string[] = [];
+      for await (const key of client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+        keys.push(String(key));
+      }
+      return keys;
+    }
+
+    if (typeof client.keys === 'function') {
+      const keys = await client.keys(pattern);
+      if (Array.isArray(keys)) {
+        return keys.map((key) => String(key));
+      }
+    }
+
     return [];
   }
 }

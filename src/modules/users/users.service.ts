@@ -6,10 +6,15 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
 import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
+import { CacheService } from '@/common/services/cache.service';
+import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cacheService: CacheService,
+  ) {}
 
   async create(createUserDto: CreateUserDto) {
     const existingUser = await this.prisma.user.findUnique({
@@ -41,73 +46,91 @@ export class UsersService {
       },
     });
 
+    await this.cacheService.invalidatePattern(CacheKeys.users.listPattern());
+
     return user;
   }
 
   async findAll(query: QueryUsersDto): Promise<PaginatedResponse<any>> {
-    const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+    const cacheKey = CacheKeys.users.list(query);
 
-    const where = query.search
-      ? {
-          OR: [
-            { email: { contains: query.search, mode: 'insensitive' as const } },
-            {
-              firstName: { contains: query.search, mode: 'insensitive' as const },
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+
+        const where = query.search
+          ? {
+              OR: [
+                { email: { contains: query.search, mode: 'insensitive' as const } },
+                {
+                  firstName: { contains: query.search, mode: 'insensitive' as const },
+                },
+                {
+                  lastName: { contains: query.search, mode: 'insensitive' as const },
+                },
+              ],
+            }
+          : {};
+
+        const [users, total] = await Promise.all([
+          this.prisma.user.findMany({
+            where,
+            skip,
+            take,
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+              isActive: true,
+              createdAt: true,
+              updatedAt: true,
             },
-            {
-              lastName: { contains: query.search, mode: 'insensitive' as const },
-            },
-          ],
-        }
-      : {};
+            orderBy: { createdAt: 'desc' },
+          }),
+          this.prisma.user.count({ where }),
+        ]);
 
-    const [users, total] = await Promise.all([
-      this.prisma.user.findMany({
-        where,
-        skip,
-        take,
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          role: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.user.count({ where }),
-    ]);
-
-    return paginate(users, total, page, limit);
+        return paginate(users, total, page, limit);
+      },
+      CacheTTL.userList,
+    );
   }
 
   async findOne(id: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        avatar: true,
-        work: true,
-        major: true,
-        bio: true,
-        role: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
+    const cacheKey = CacheKeys.users.detail(id);
+
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const user = await this.prisma.user.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            work: true,
+            major: true,
+            bio: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        if (!user) {
+          throw new NotFoundException('User not found');
+        }
+
+        return user;
       },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    return user;
+      CacheTTL.userDetail,
+    );
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
@@ -156,6 +179,10 @@ export class UsersService {
       },
     });
 
+    await this.cacheService.del(CacheKeys.users.detail(id));
+    await this.cacheService.del(CacheKeys.users.profile(id));
+    await this.cacheService.invalidatePattern(CacheKeys.users.listPattern());
+
     return updatedUser;
   }
 
@@ -166,11 +193,18 @@ export class UsersService {
       where: { id },
     });
 
+    await this.cacheService.del(CacheKeys.users.detail(id));
+    await this.cacheService.del(CacheKeys.users.profile(id));
+    // Vidu user list page 1, page 2,...
+    await this.cacheService.invalidatePattern(CacheKeys.users.listPattern());
+
     return { message: 'User deleted successfully' };
   }
 
   async getProfile(userId: string) {
-    return this.findOne(userId);
+    const cacheKey = CacheKeys.users.profile(userId);
+
+    return this.cacheService.getOrSet(cacheKey, () => this.findOne(userId), CacheTTL.userProfile);
   }
 
   async updateProfile(userId: string, updateUserDto: UpdateUserDto) {

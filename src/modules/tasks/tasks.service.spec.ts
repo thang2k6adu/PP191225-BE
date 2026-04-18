@@ -4,11 +4,13 @@ import { PrismaService } from '@/database/prisma.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { TaskStatus } from '@prisma/client';
+import { CacheService } from '@/common/services/cache.service';
 
 describe('TasksService', () => {
   let service: TasksService;
   let mockPrismaService: any;
   let mockTrackingService: any;
+  let mockCacheService: any;
 
   beforeEach(async () => {
     mockPrismaService = {
@@ -31,11 +33,20 @@ describe('TasksService', () => {
       checkAndCompleteIfNeeded: jest.fn(),
     };
 
+    mockCacheService = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+      getOrSet: jest.fn(async (_key: string, factory: () => Promise<any>) => factory()),
+      invalidatePattern: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TasksService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: TrackingService, useValue: mockTrackingService },
+        { provide: CacheService, useValue: mockCacheService },
       ],
     }).compile();
 
