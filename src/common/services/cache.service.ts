@@ -35,16 +35,21 @@ export class CacheService {
 
   async invalidatePattern(pattern: string): Promise<void> {
     const client = this.getRedisClient();
-    if (!client) return;
-
-    const pipeline = client.pipeline();
-    const keys = await this.getKeysByPattern(pattern);
-
-    for (const key of keys) {
-      pipeline.del(key);
+    if (!client) {
+      return;
     }
 
-    await pipeline.exec();
+    const keys = await this.getKeysByPattern(pattern);
+    if (keys.length === 0) {
+      return;
+    }
+
+    if (typeof client.del === 'function') {
+      await client.del(...keys);
+      return;
+    }
+
+    await Promise.all(keys.map((key) => this.del(key)));
   }
 
   private getRedisClient(): any {
