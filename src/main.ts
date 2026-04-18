@@ -8,7 +8,6 @@ import { resolve } from 'path';
 import { AppModule } from './app.module';
 import { SocketIoAdapter } from './common/adapters/socket-io.adapter';
 import * as compression from 'compression';
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -16,7 +15,7 @@ async function bootstrap() {
 
   // Security
   app.use(helmet());
-  app.use(compression());
+  app.use((compression as any)());
 
   // Serve local uploaded files (avatars/images/files)
   const localUploadDestination =
