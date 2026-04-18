@@ -136,6 +136,6 @@
     "testEnvironment": "node"
   },
   "prisma": {
-    "seed": "node prisma/seed.ts"
+    "seed": "node dist/prisma/seed.js"
   }
 }
