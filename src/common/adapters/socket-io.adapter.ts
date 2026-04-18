@@ -20,11 +20,13 @@ export class SocketIoAdapter extends IoAdapter {
       const redisHost = this.configService.get<string>('redis.host');
       const redisPort = this.configService.get<number>('redis.port');
       const redisPassword = this.configService.get<string>('redis.password');
+      const redisTls = this.configService.get<boolean>('redis.tls');
 
       const pubClient = createClient({
         socket: {
           host: redisHost,
           port: redisPort,
+          tls: redisTls ? true : undefined,
           reconnectStrategy: () => false, // Disable reconnection
         },
         password: redisPassword,
