@@ -49,7 +49,8 @@ export class MailService {
 
       this.logger.log(`Email sent successfully to ${options.to}`);
     } catch (error) {
-      this.logger.error(`Failed to send email to ${options.to}: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to send email to ${options.to}: ${errorMessage}`);
       throw error;
     }
   }
@@ -64,25 +65,24 @@ export class MailService {
     context: Record<string, any>,
   ): Promise<string> {
     try {
-      const templatePath = join(
-        process.cwd(),
-        'src',
-        'modules',
-        'mail',
-        'templates',
-        `${templateName}.hbs`,
-      );
+      const templatePath = join(__dirname, 'templates', `${templateName}.hbs`);
       const templateContent = readFileSync(templatePath, 'utf-8');
       const template = handlebars.compile(templateContent);
       return template(context);
     } catch (error) {
-      this.logger.error(`Failed to render template ${templateName}: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to render template ${templateName}: ${errorMessage}`);
       // Fallback to simple HTML
       return this.getDefaultTemplate(context);
     }
   }
 
   private getDefaultTemplate(context: Record<string, any>): string {
+    const fallbackContent =
+      context.message ||
+      context.body ||
+      'Please check the email content in the template configuration.';
+
     return `
       <!DOCTYPE html>
       <html>
@@ -92,7 +92,7 @@ export class MailService {
         </head>
         <body>
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            ${context.message || context.body || ''}
+            ${fallbackContent}
           </div>
         </body>
       </html>
