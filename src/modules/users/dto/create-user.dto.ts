@@ -8,6 +8,11 @@ export class CreateUserDto {
   @IsNotEmpty()
   email: string;
 
+  @ApiProperty({ example: 'contact@example.com', required: false })
+  @IsEmail()
+  @IsOptional()
+  contactEmail?: string;
+
   @ApiProperty({ example: 'password123' })
   @IsString()
   @IsNotEmpty()

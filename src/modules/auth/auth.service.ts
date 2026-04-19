@@ -76,6 +76,7 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: {
         email: registerDto.email,
+        contactEmail: null,
         password: hashedPassword,
         firstName: registerDto.firstName,
         lastName: registerDto.lastName,
@@ -83,6 +84,7 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        contactEmail: true,
         firstName: true,
         lastName: true,
         role: true,
@@ -143,6 +145,7 @@ export class AuthService {
         where: { email: verifyEmailDto.email },
         create: {
           email: verifyEmailDto.email,
+          contactEmail: null,
           firstName: verifyEmailDto.firstName || null,
           lastName: verifyEmailDto.lastName || null,
           password: null, // Firebase auth — no local password
@@ -280,6 +283,7 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        contactEmail: true,
         firebaseUid: true,
         firstName: true,
         lastName: true,
@@ -298,6 +302,7 @@ export class AuthService {
         select: {
           id: true,
           email: true,
+          contactEmail: true,
           firebaseUid: true,
           firstName: true,
           lastName: true,
@@ -311,6 +316,7 @@ export class AuthService {
     const userSelect = {
       id: true,
       email: true,
+      contactEmail: true,
       firstName: true,
       lastName: true,
       avatar: true,
@@ -322,6 +328,7 @@ export class AuthService {
     let user: {
       id: string;
       email: string;
+      contactEmail: string | null;
       firstName: string | null;
       lastName: string | null;
       avatar: string | null;
@@ -333,6 +340,7 @@ export class AuthService {
       user = await (this.prisma.user.create as any)({
         data: {
           email,
+          contactEmail: null,
           firebaseUid,
           firstName: resolvedFirstName,
           lastName: resolvedLastName,
@@ -387,6 +395,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        contactEmail: user.contactEmail || null,
         firstName: user.firstName || undefined,
         lastName: user.lastName || undefined,
         avatar: user.avatar || undefined,
@@ -452,6 +461,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        contactEmail: user.contactEmail || null,
         firstName: user.firstName || undefined,
         lastName: user.lastName || undefined,
         avatar: user.avatar || undefined,

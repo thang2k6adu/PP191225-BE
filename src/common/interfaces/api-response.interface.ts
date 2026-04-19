@@ -23,6 +23,7 @@ export interface AuthResponse {
   user: {
     id: string;
     email: string;
+    contactEmail?: string | null;
     firstName?: string | null;
     lastName?: string | null;
     avatar?: string;
@@ -39,6 +40,7 @@ export interface FirebaseLoginResponse {
   user: {
     id: string;
     email: string;
+    contactEmail?: string | null;
     firstName?: string | null;
     lastName?: string | null;
     avatar?: string;

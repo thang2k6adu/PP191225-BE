@@ -3,10 +3,10 @@ import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-valid
 import { PASSWORD_MIN_LENGTH } from '@/common/constants/password.constants';
 
 export class UpdateUserDto {
-  @ApiProperty({ example: 'user@example.com', required: false })
+  @ApiProperty({ example: 'contact@example.com', required: false })
   @IsEmail()
   @IsOptional()
-  email?: string;
+  contactEmail?: string;
 
   @ApiProperty({ example: 'password123', required: false })
   @IsString()

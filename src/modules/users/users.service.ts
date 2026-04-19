@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '@/database/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -8,6 +8,7 @@ import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
 import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
 import { CacheService } from '@/common/services/cache.service';
 import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
+import { ConflictException } from '@nestjs/common/exceptions/conflict.exception';
 
 @Injectable()
 export class UsersService {
@@ -30,6 +31,7 @@ export class UsersService {
     const user = await this.prisma.user.create({
       data: {
         email: createUserDto.email,
+        contactEmail: createUserDto.contactEmail,
         password: hashedPassword,
         firstName: createUserDto.firstName,
         lastName: createUserDto.lastName,
@@ -37,6 +39,7 @@ export class UsersService {
       select: {
         id: true,
         email: true,
+        contactEmail: true,
         firstName: true,
         lastName: true,
         role: true,
@@ -81,6 +84,7 @@ export class UsersService {
             select: {
               id: true,
               email: true,
+              contactEmail: true,
               firstName: true,
               lastName: true,
               role: true,
@@ -110,6 +114,7 @@ export class UsersService {
           select: {
             id: true,
             email: true,
+            contactEmail: true,
             firstName: true,
             lastName: true,
             avatar: true,
@@ -134,20 +139,10 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    const user = await this.findOne(id);
-
-    if (updateUserDto.email && updateUserDto.email !== user.email) {
-      const existingUser = await this.prisma.user.findUnique({
-        where: { email: updateUserDto.email },
-      });
-
-      if (existingUser) {
-        throw new ConflictException('User with this email already exists');
-      }
-    }
+    await this.findOne(id);
 
     const updateData: any = {
-      email: updateUserDto.email,
+      contactEmail: updateUserDto.contactEmail,
       firstName: updateUserDto.firstName,
       lastName: updateUserDto.lastName,
       avatar: updateUserDto.avatar,
@@ -166,6 +161,7 @@ export class UsersService {
       select: {
         id: true,
         email: true,
+        contactEmail: true,
         firstName: true,
         lastName: true,
         avatar: true,
