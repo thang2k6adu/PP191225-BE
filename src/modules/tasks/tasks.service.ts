@@ -10,9 +10,10 @@ import { PrismaService } from '@/database/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
+import { QueryTaskStatsDto, TaskStatsPeriod } from './dto/query-task-stats.dto';
 import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
 import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
-import { TaskStatus } from '@prisma/client';
+import { Prisma, TaskStatus } from '@prisma/client';
 import { TrackingService } from '../tracking/tracking.service';
 import { CacheService } from '@/common/services/cache.service';
 import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
@@ -30,9 +31,178 @@ export class TasksService {
     await this.cacheService.del(CacheKeys.tasks.active(userId));
     // Cứ nghĩ tới 1 pattern thì thường là list pattern (vì có nhiều page cho 1 list)
     await this.cacheService.invalidatePattern(CacheKeys.tasks.listPattern(userId));
+    await this.cacheService.invalidatePattern(CacheKeys.tasks.statsPattern(userId));
     if (taskId) {
       await this.cacheService.del(CacheKeys.tasks.detail(userId, taskId));
     }
+  }
+
+  // Khoang thoi gian can thong ke
+  private getDateRange(period: TaskStatsPeriod, anchorDate: Date) {
+    const from = new Date(anchorDate);
+    const to = new Date(anchorDate);
+
+    if (period === TaskStatsPeriod.DAY) {
+      // day view => daily buckets inside current month
+      from.setUTCDate(1);
+      from.setUTCHours(0, 0, 0, 0);
+
+      to.setUTCMonth(to.getUTCMonth() + 1, 1);
+      to.setUTCHours(0, 0, 0, 0);
+      return { from, to };
+    }
+
+    if (period === TaskStatsPeriod.MONTH) {
+      from.setUTCMonth(0, 1);
+      from.setUTCHours(0, 0, 0, 0);
+
+      to.setUTCFullYear(to.getUTCFullYear() + 1, 0, 1);
+      to.setUTCHours(0, 0, 0, 0);
+      return { from, to };
+    }
+
+    // year view => yearly buckets in rolling 5-year window
+    const anchorYear = anchorDate.getUTCFullYear();
+    from.setUTCFullYear(anchorYear - 4, 0, 1);
+    from.setUTCHours(0, 0, 0, 0);
+
+    to.setUTCFullYear(anchorYear + 1, 0, 1);
+    to.setUTCHours(0, 0, 0, 0);
+    return { from, to };
+  }
+
+  private getBucketGranularity(period: TaskStatsPeriod): 'day' | 'month' | 'year' {
+    if (period === TaskStatsPeriod.DAY) {
+      return 'day';
+    }
+
+    if (period === TaskStatsPeriod.MONTH) {
+      return 'month';
+    }
+
+    return 'year';
+  }
+
+  // Nếu ngày thì là 0h, nếu tháng thì là ngày 1, nếu năm thì là tháng 1 ngày 1
+  private getBucketStart(period: TaskStatsPeriod, from: Date): Date {
+    const bucket = new Date(from);
+
+    if (period === TaskStatsPeriod.DAY) {
+      bucket.setUTCHours(0, 0, 0, 0);
+      return bucket;
+    }
+
+    if (period === TaskStatsPeriod.MONTH) {
+      bucket.setUTCDate(1);
+      bucket.setUTCHours(0, 0, 0, 0);
+      return bucket;
+    }
+
+    bucket.setUTCMonth(0, 1);
+    bucket.setUTCHours(0, 0, 0, 0);
+    return bucket;
+  }
+
+  // Nhảy mốc tiếp theo VD DAY + 1 ngày, Month + 1 tháng,...
+  private getNextBucket(period: TaskStatsPeriod, current: Date): Date {
+    const next = new Date(current);
+
+    if (period === TaskStatsPeriod.DAY) {
+      next.setUTCDate(next.getUTCDate() + 1);
+      return next;
+    }
+
+    if (period === TaskStatsPeriod.MONTH) {
+      next.setUTCMonth(next.getUTCMonth() + 1, 1);
+      return next;
+    }
+
+    next.setUTCFullYear(next.getUTCFullYear() + 1, 0, 1);
+    return next;
+  }
+
+  async getStats(query: QueryTaskStatsDto, userId: string) {
+    const period = query.period || TaskStatsPeriod.MONTH;
+    const anchorDate = query.anchorDate ? new Date(query.anchorDate) : new Date();
+    const { from, to } = this.getDateRange(period, anchorDate);
+
+    const cacheKey = CacheKeys.tasks.stats(userId, query);
+
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const granularity = this.getBucketGranularity(period);
+
+        const bucketExpr = Prisma.raw(
+          `date_trunc('${granularity}', "createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+        );
+
+        const statusRows = await this.prisma.$queryRaw<Array<{ status: string; count: number }>>(
+          Prisma.sql`
+            SELECT "status"::text AS status, COUNT(*)::int AS count
+            FROM "tasks"
+            WHERE "userId" = ${userId}
+              AND "createdAt" >= ${from}
+              AND "createdAt" < ${to}
+            GROUP BY "status"
+          `,
+        );
+
+        const summary = {
+          planned: 0,
+          inProgress: 0,
+          completed: 0,
+        };
+
+        for (const row of statusRows) {
+          if (row.status === TaskStatus.PLANNED) {
+            summary.planned = Number(row.count);
+          } else if (row.status === TaskStatus.ACTIVE) {
+            summary.inProgress = Number(row.count);
+          } else if (row.status === TaskStatus.DONE) {
+            summary.completed = Number(row.count);
+          }
+        }
+
+        const seriesRows = await this.prisma.$queryRaw<Array<{ bucket: Date; count: number }>>(
+          Prisma.sql`
+            SELECT ${bucketExpr} AS bucket, COUNT(*)::int AS count
+            FROM "tasks"
+            WHERE "userId" = ${userId}
+              AND "createdAt" >= ${from}
+              AND "createdAt" < ${to}
+            GROUP BY bucket
+            ORDER BY bucket ASC
+          `,
+        );
+
+        const countByTimestamp = new Map<string, number>();
+        for (const row of seriesRows) {
+          countByTimestamp.set(new Date(row.bucket).toISOString(), Number(row.count));
+        }
+
+        const series: Array<{ timestamp: string; count: number }> = [];
+        let bucket = this.getBucketStart(period, from);
+        while (bucket < to) {
+          const timestamp = bucket.toISOString();
+          series.push({
+            timestamp,
+            count: countByTimestamp.get(timestamp) || 0,
+          });
+          bucket = this.getNextBucket(period, bucket);
+        }
+
+        return {
+          range: {
+            from: from.toISOString(),
+            to: to.toISOString(),
+          },
+          summary,
+          series,
+        };
+      },
+      CacheTTL.taskStats,
+    );
   }
 
   async create(createTaskDto: CreateTaskDto, userId: string) {

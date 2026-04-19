@@ -1,4 +1,5 @@
 import { QueryTasksDto } from '@/modules/tasks/dto/query-tasks.dto';
+import { QueryTaskStatsDto } from '@/modules/tasks/dto/query-task-stats.dto';
 import { QueryUsersDto } from '@/modules/users/dto/query-users.dto';
 
 function normalize(value: string | number | boolean | null | undefined): string {
@@ -28,8 +29,11 @@ export const CacheKeys = {
       )}:status:${normalize(query.status)}:isActive:${normalize(query.isActive)}:search:${normalize(
         query.search,
       )}`,
+    stats: (userId: string, query: QueryTaskStatsDto) =>
+      `task:stats:user:${userId}:period:${normalize(query.period)}:anchor:${normalize(query.anchorDate)}`,
     listPattern: (userId: string) => `task:list:user:${userId}:*`,
     detailPattern: (userId: string) => `task:detail:${userId}:*`,
+    statsPattern: (userId: string) => `task:stats:user:${userId}:*`,
   },
 };
 
@@ -40,5 +44,6 @@ export const CacheTTL = {
   taskActive: 60 * 1000,
   taskDetail: 3 * 60 * 1000,
   taskList: 2 * 60 * 1000,
+  taskStats: 2 * 60 * 1000,
   default: 5 * 60 * 1000,
 };

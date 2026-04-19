@@ -16,6 +16,7 @@ import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
+import { QueryTaskStatsDto } from './dto/query-task-stats.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 
@@ -131,6 +132,49 @@ export class TasksController {
   })
   findActive(@CurrentUser() user: any) {
     return this.tasksService.findActive(user.id);
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Get task statistics by period',
+    description:
+      'Returns timestamp-based task statistics aggregated by createdAt for day/month/year period.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Task statistics retrieved successfully',
+    schema: {
+      example: {
+        error: false,
+        code: 0,
+        message: 'Success',
+        data: {
+          range: {
+            from: '2026-04-01T00:00:00.000Z',
+            to: '2026-05-01T00:00:00.000Z',
+          },
+          summary: {
+            planned: 12,
+            inProgress: 8,
+            completed: 20,
+          },
+          series: [
+            {
+              timestamp: '2026-04-01T00:00:00.000Z',
+              count: 2,
+            },
+            {
+              timestamp: '2026-04-02T00:00:00.000Z',
+              count: 0,
+            },
+          ],
+        },
+        traceId: 'stats123',
+      },
+    },
+  })
+  getStats(@Query() query: QueryTaskStatsDto, @CurrentUser() user: any) {
+    return this.tasksService.getStats(query, user.id);
   }
 
   @Get(':id')
