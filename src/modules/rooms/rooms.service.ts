@@ -9,6 +9,9 @@ import { PrismaService } from '@/database/prisma.service';
 import { LiveKitService } from '@/common/services/livekit.service';
 import { RoomType, RoomStatus, RoomMemberStatus, UserStatus, RoomVisibility } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
+import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
+import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
+import { QueryRoomsDto } from './dto/query-rooms.dto';
 // import { PUBLIC_TOPICS, PublicTopic } from '@/config/app.config';
 
 @Injectable()
@@ -58,39 +61,56 @@ export class RoomsService {
     }
   }
 
-  async getPublicRooms() {
-    const rooms = await this.prisma.room.findMany({
-      where: {
-        type: RoomType.PUBLIC,
-        visibility: RoomVisibility.PUBLIC,
-      },
-      include: {
-        _count: {
-          select: {
-            members: {
-              where: {
-                status: {
-                  not: RoomMemberStatus.LEFT,
+  async getPublicRooms(query: QueryRoomsDto): Promise<PaginatedResponse<any>> {
+    const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+
+    const where = {
+      type: RoomType.PUBLIC,
+      visibility: RoomVisibility.PUBLIC,
+    };
+
+    const [rooms, total] = await Promise.all([
+      this.prisma.room.findMany({
+        where,
+        include: {
+          _count: {
+            select: {
+              members: {
+                where: {
+                  status: {
+                    not: RoomMemberStatus.LEFT,
+                  },
                 },
               },
             },
           },
         },
-      },
-      orderBy: {
-        topic: 'asc',
-      },
+        orderBy: {
+          topic: 'asc',
+        },
+        skip,
+        take,
+      }),
+      this.prisma.room.count({ where }),
+    ]);
+
+    const publicRooms = rooms.map((room) => {
+      const roomWithCount = room as typeof room & {
+        _count: { members: number };
+      };
+
+      return {
+        id: roomWithCount.id,
+        type: roomWithCount.type,
+        topic: roomWithCount.topic,
+        livekitRoomName: roomWithCount.livekitRoomName,
+        status: roomWithCount.status,
+        maxMembers: roomWithCount.maxMembers,
+        currentMembers: roomWithCount._count.members,
+      };
     });
 
-    return rooms.map((room) => ({
-      id: room.id,
-      type: room.type,
-      topic: room.topic,
-      livekitRoomName: room.livekitRoomName,
-      status: room.status,
-      maxMembers: room.maxMembers,
-      currentMembers: room._count.members,
-    }));
+    return paginate(publicRooms, total, page, limit);
   }
 
   async findOrCreatePublicRoom(topic: string, userId: string) {
@@ -637,7 +657,8 @@ export class RoomsService {
             await this.livekitService.deleteRoom(room.livekitRoomName);
             console.log(`✅ LiveKit room ${room.livekitRoomName} deleted`);
           } catch (error) {
-            console.error(`Failed to delete LiveKit room: ${error.message}`);
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(`Failed to delete LiveKit room: ${errorMessage}`);
           }
         }
 

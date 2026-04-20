@@ -1,8 +1,18 @@
-import { Controller, Get, Post, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  Query,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { RoomsService } from './rooms.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { QueryRoomsDto } from './dto/query-rooms.dto';
 
 @ApiTags('rooms')
 @ApiBearerAuth()
@@ -23,34 +33,43 @@ export class RoomsController {
         code: 0,
         message: 'Success',
         data: {
-          rooms: [
-            {
-              id: 'room-uuid-1',
-              type: 'PUBLIC',
-              topic: 'math',
-              livekitRoomName: 'public-math',
-              status: 'ACTIVE',
-              maxMembers: 10,
-              currentMembers: 3,
+          rooms: {
+            items: [
+              {
+                id: 'room-uuid-1',
+                type: 'PUBLIC',
+                topic: 'math',
+                livekitRoomName: 'public-math',
+                status: 'ACTIVE',
+                maxMembers: 10,
+                currentMembers: 3,
+              },
+              {
+                id: 'room-uuid-2',
+                type: 'PUBLIC',
+                topic: 'coding',
+                livekitRoomName: 'public-coding',
+                status: 'ACTIVE',
+                maxMembers: 10,
+                currentMembers: 1,
+              },
+            ],
+            meta: {
+              itemCount: 2,
+              totalItems: 18,
+              itemsPerPage: 10,
+              totalPages: 2,
+              currentPage: 1,
             },
-            {
-              id: 'room-uuid-2',
-              type: 'PUBLIC',
-              topic: 'coding',
-              livekitRoomName: 'public-coding',
-              status: 'ACTIVE',
-              maxMembers: 10,
-              currentMembers: 1,
-            },
-          ],
+          },
         },
         traceId: 'abc123',
       },
     },
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getPublicRooms() {
-    const rooms = await this.roomsService.getPublicRooms();
+  async getPublicRooms(@Query() query: QueryRoomsDto) {
+    const rooms = await this.roomsService.getPublicRooms(query);
     return { rooms };
   }
 
