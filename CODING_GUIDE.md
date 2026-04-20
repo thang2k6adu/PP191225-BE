@@ -6,9 +6,10 @@ Hướng dẫn chi tiết về workflow code khi implement một feature mới t
 
 1. [Tổng Quan Workflow](#tổng-quan-workflow)
 2. [Chi Tiết Từng Bước](#chi-tiết-từng-bước)
-3. [Ví Dụ Cụ Thể: Products Feature](#ví-dụ-cụ-thể-products-feature)
-4. [Best Practices](#best-practices)
-5. [Checklist](#checklist)
+3. [Cache Strategy](#cache-strategy)
+4. [Ví Dụ Cụ Thể: Products Feature](#ví-dụ-cụ-thể-products-feature)
+5. [Best Practices](#best-practices)
+6. [Checklist](#checklist)
 
 ---
 
@@ -23,13 +24,15 @@ Khi implement một feature mới, hãy làm theo thứ tự sau:
    ↓
 3. Service Layer (Business Logic)
    ↓
-4. Controller (API Endpoints)
+4. Cache Strategy (Read-through + Invalidation)
+  ↓
+5. Controller (API Endpoints)
    ↓
-5. Module (Dependency Injection)
+6. Module (Dependency Injection)
    ↓
-6. Đăng ký Module trong AppModule
+7. Đăng ký Module trong AppModule
    ↓
-7. Tests (Unit & E2E)
+8. Tests (Unit & E2E)
 ```
 
 ---
@@ -386,6 +389,101 @@ export class ProductsService {
 - Sử dụng pagination utilities từ `@/common/utils/pagination.util`
 - Luôn validate ownership trước khi update/delete
 - Sử dụng `mode: 'insensitive'` cho case-insensitive search
+
+---
+
+## Cache Strategy
+
+### BƯỚC 3.5: Cache Strategy (Read-through + Invalidation)
+
+**📍 Location:** `src/modules/[featureName]/[featureName].service.ts`
+
+**Mục đích:** Giảm tải DB cho read APIs và giữ dữ liệu nhất quán sau write APIs
+
+**Chuẩn áp dụng trong project hiện tại (theo module Task):**
+
+- Read APIs dùng `cacheService.getOrSet(...)`
+- Write APIs gọi invalidation helper sau khi write thành công
+- Dùng key tập trung từ `CacheKeys` và TTL từ `CacheTTL`
+
+**Cache read template:**
+
+```typescript
+import { CacheService } from '@/common/services/cache.service';
+import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
+
+constructor(
+  private prisma: PrismaService,
+  private cacheService: CacheService,
+) {}
+
+async findAll(query: QueryProductsDto, userId: string) {
+  const cacheKey = CacheKeys.tasks.list(userId, {
+    page: query.page,
+    limit: query.limit,
+  });
+
+  return this.cacheService.getOrSet(
+    cacheKey,
+    async () => {
+      const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+      const where: any = { userId };
+
+      const [items, total] = await Promise.all([
+        this.prisma.product.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+        this.prisma.product.count({ where }),
+      ]);
+
+      return paginate(items, total, page, limit);
+    },
+    CacheTTL.taskList,
+  );
+}
+```
+
+**Cache invalidation template:**
+
+```typescript
+private async invalidateUserProductCache(userId: string, productId?: string): Promise<void> {
+  await this.cacheService.del(CacheKeys.tasks.active(userId));
+  await this.cacheService.invalidatePattern(CacheKeys.tasks.listPattern(userId));
+  await this.cacheService.invalidatePattern(CacheKeys.tasks.statsPattern(userId));
+
+  if (productId) {
+    await this.cacheService.del(CacheKeys.tasks.detail(userId, productId));
+  }
+}
+
+async update(id: string, dto: UpdateProductDto, userId: string) {
+  await this.findOne(id, userId);
+
+  const updated = await this.prisma.product.update({
+    where: { id },
+    data: dto,
+  });
+
+  await this.invalidateUserProductCache(userId, id);
+  return updated;
+}
+```
+
+**Khi nào cache:**
+
+- List APIs có phân trang/filter
+- Detail APIs đọc nhiều ghi ít
+- Stats/aggregation APIs có query nặng
+
+**Khi nào không cache:**
+
+- Create/update/delete endpoints
+- Luồng cần dữ liệu real-time tuyệt đối
+
+**⚠️ Lưu ý quan trọng:**
+
+- Invalidate sau khi write thành công (sau transaction nếu có)
+- Không hardcode cache key string trong service, dùng `CacheKeys` utility
+- Ưu tiên pattern-based invalidation cho list/stats
+- TTL ngắn cho dữ liệu biến động nhanh, dài hơn cho detail ổn định
 
 ---
 
@@ -1425,7 +1523,10 @@ export class AppModule {}
 ### 8. **Performance**
 
 - Sử dụng pagination cho list endpoints
-- Implement caching nếu cần (sử dụng `@nestjs/cache-manager`)
+- Implement caching bằng `CacheService` + `CacheKeys` + `CacheTTL` cho read APIs
+- Dùng read-through pattern (`getOrSet`) thay vì cache logic rải rác
+- Luôn invalidate cache sau write operations (`create/update/delete/activate/complete`)
+- Không hardcode key string trong service
 - Optimize database queries (sử dụng `select`, indexes)
 - Use `Promise.all()` cho parallel operations
 
@@ -1466,6 +1567,11 @@ Khi implement một feature mới, đảm bảo:
 - [ ] ✅ Code đã pass formatting check (`npm run format:check`)
 - [ ] ✅ Đã handle errors properly với NestJS exceptions
 - [ ] ✅ Đã implement pagination (nếu cần)
+- [ ] ✅ Read APIs đã dùng `cacheService.getOrSet(...)` (nếu phù hợp)
+- [ ] ✅ Cache key đã dùng utility tập trung (`CacheKeys`), không hardcode
+- [ ] ✅ TTL đã dùng constants (`CacheTTL`) và phù hợp loại dữ liệu
+- [ ] ✅ Write APIs đã invalidate cache liên quan (detail/list/stats)
+- [ ] ✅ Đã test cache hit/miss/invalidation cơ bản
 - [ ] ✅ Đã implement authorization checks
 - [ ] ✅ Đã sử dụng `select` để không expose sensitive data
 - [ ] ✅ Đã test với different user roles (USER, ADMIN, MODERATOR)
