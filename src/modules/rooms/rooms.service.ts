@@ -50,6 +50,31 @@ export class RoomsService {
     return result;
   }
 
+  async getCurrentActiveRoom(userId: string) {
+    const existingMember = await this.findExistingActiveMember(userId);
+
+    if (!existingMember || existingMember.room.status === RoomStatus.CLOSED) {
+      return { hasActiveRoom: false, room: null, token: null };
+    }
+
+    const token = await this.livekitService.generateToken(
+      existingMember.room.livekitRoomName,
+      userId,
+    );
+
+    return {
+      hasActiveRoom: true,
+      room: {
+        id: existingMember.room.id,
+        type: existingMember.room.type,
+        topic: existingMember.room.topic,
+        livekitRoomName: existingMember.room.livekitRoomName,
+        status: existingMember.room.status,
+      },
+      token,
+    };
+  }
+
   generateRoomName(type: RoomType, topic?: string): string {
     if (type === RoomType.PUBLIC) {
       if (!topic) {
@@ -114,7 +139,6 @@ export class RoomsService {
   }
 
   async findOrCreatePublicRoom(topic: string, userId: string) {
-    // Check if user already in a room
     const existingMember = await this.findExistingActiveMember(userId);
 
     if (existingMember && existingMember.room.status !== RoomStatus.CLOSED) {

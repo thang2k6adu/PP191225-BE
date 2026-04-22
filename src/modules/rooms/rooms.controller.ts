@@ -21,6 +21,17 @@ import { QueryRoomsDto } from './dto/query-rooms.dto';
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
+  @Get('current')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get current active room for the user' })
+  @ApiResponse({
+    status: 200,
+    description: 'Current room status retrieved successfully',
+  })
+  async getCurrentRoom(@CurrentUser() user: any) {
+    return this.roomsService.getCurrentActiveRoom(user.id);
+  }
+
   @Get('public')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get all public rooms' })
