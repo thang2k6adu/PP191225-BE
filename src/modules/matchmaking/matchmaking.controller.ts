@@ -32,12 +32,7 @@ export class MatchmakingController {
     private readonly matchmakingGateway: MatchmakingGateway,
   ) {}
 
-  /**
-   * Join matchmaking queue
-   * POST /matchmaking/join
-   *
-   * Random matching - find available room or wait in queue
-   */
+  // Random matching - find available room or wait in queue
   @Post('join')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -88,12 +83,7 @@ export class MatchmakingController {
     }
   }
 
-  /**
-   * Cancel matchmaking
-   * POST /matchmaking/cancel
-   *
-   * Remove user from waiting queue
-   */
+  // Remove user from waiting queue
   @Post('cancel')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -116,10 +106,6 @@ export class MatchmakingController {
     };
   }
 
-  /**
-   * Get matchmaking statistics (for debugging/monitoring)
-   * GET /matchmaking/stats
-   */
   @Get('stats')
   @ApiOperation({
     summary: 'Get matchmaking statistics',

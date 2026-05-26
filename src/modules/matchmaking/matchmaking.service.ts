@@ -5,6 +5,10 @@ import { RoomsService } from '../rooms/rooms.service';
 import { MatchmakingRedisService } from './matchmaking-redis.service';
 import { MatchmakingGateway } from './matchmaking.gateway';
 import { LiveKitService } from '@/common/services/livekit.service';
+import {
+  buildParticipantDisplayName,
+  buildParticipantMetadata,
+} from '@/common/utils/livekit-participant.util';
 
 @Injectable()
 export class MatchmakingService {
@@ -324,6 +328,18 @@ export class MatchmakingService {
   ): Promise<void> {
     const wsUrl = this.configService.get<string>('LIVEKIT_URL') || 'ws://localhost:7880';
 
+    const dbUsers = await this.prisma.user.findMany({
+      where: { id: { in: users.map((u) => u.userId) } },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatar: true,
+      },
+    });
+    const userById = new Map(dbUsers.map((u) => [u.id, u]));
+
     const notifications = users.map(async (user) => {
       try {
         const socketInfo = await this.redisService.getSocketInfo(user.userId);
@@ -334,10 +350,18 @@ export class MatchmakingService {
           return { success: false, userId: user.userId };
         }
 
+        const dbUser = userById.get(user.userId);
+        if (!dbUser) {
+          this.logger.warn(`⚠️ User ${user.userId} not found for LiveKit token`);
+          return { success: false, userId: user.userId };
+        }
+
         const token = await this.livekitService.generateToken(livekitRoomName, user.userId, {
           ttl: 7200,
           canPublish: true,
           canSubscribe: true,
+          name: buildParticipantDisplayName(dbUser),
+          metadata: buildParticipantMetadata(dbUser),
         });
 
         const payload = {

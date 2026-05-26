@@ -12,7 +12,19 @@ import { v4 as uuid } from 'uuid';
 import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
 import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
 import { QueryRoomsDto } from './dto/query-rooms.dto';
+import {
+  buildParticipantDisplayName,
+  buildParticipantMetadata,
+} from '@/common/utils/livekit-participant.util';
 // import { PUBLIC_TOPICS, PublicTopic } from '@/config/app.config';
+
+const livekitUserSelect = {
+  id: true,
+  email: true,
+  firstName: true,
+  lastName: true,
+  avatar: true,
+} as const;
 
 @Injectable()
 export class RoomsService {
@@ -50,6 +62,31 @@ export class RoomsService {
     return result;
   }
 
+  private async issueLivekitToken(
+    livekitRoomName: string,
+    userId: string,
+    grantOptions?: {
+      ttl?: number;
+      canPublish?: boolean;
+      canSubscribe?: boolean;
+    },
+  ): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: livekitUserSelect,
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.livekitService.generateToken(livekitRoomName, userId, {
+      ...grantOptions,
+      name: buildParticipantDisplayName(user),
+      metadata: buildParticipantMetadata(user),
+    });
+  }
+
   async getCurrentActiveRoom(userId: string) {
     const existingMember = await this.findExistingActiveMember(userId);
 
@@ -57,10 +94,7 @@ export class RoomsService {
       return { hasActiveRoom: false, room: null, token: null };
     }
 
-    const token = await this.livekitService.generateToken(
-      existingMember.room.livekitRoomName,
-      userId,
-    );
+    const token = await this.issueLivekitToken(existingMember.room.livekitRoomName, userId);
 
     return {
       hasActiveRoom: true,
@@ -142,7 +176,7 @@ export class RoomsService {
     const existingMember = await this.findExistingActiveMember(userId);
 
     if (existingMember && existingMember.room.status !== RoomStatus.CLOSED) {
-      const livekitToken = await this.livekitService.generateToken(
+      const livekitToken = await this.issueLivekitToken(
         existingMember.room.livekitRoomName,
         userId,
       );
@@ -238,7 +272,7 @@ export class RoomsService {
       data: { status: UserStatus.IN_ROOM },
     });
 
-    const livekitToken = await this.livekitService.generateToken(room.livekitRoomName, userId);
+    const livekitToken = await this.issueLivekitToken(room.livekitRoomName, userId);
 
     return {
       roomId: room.id,
@@ -253,7 +287,7 @@ export class RoomsService {
     const existingMember = await this.findExistingActiveMember(userId);
 
     if (existingMember && existingMember.roomId === roomId) {
-      const livekitToken = await this.livekitService.generateToken(
+      const livekitToken = await this.issueLivekitToken(
         existingMember.room.livekitRoomName,
         userId,
       );
@@ -331,7 +365,7 @@ export class RoomsService {
       data: { status: UserStatus.IN_ROOM },
     });
 
-    const livekitToken = await this.livekitService.generateToken(room.livekitRoomName, userId);
+    const livekitToken = await this.issueLivekitToken(room.livekitRoomName, userId);
 
     return {
       roomId: room.id,
@@ -388,9 +422,7 @@ export class RoomsService {
       },
     });
 
-    const tokens = await Promise.all(
-      userIds.map((userId) => this.livekitService.generateToken(roomName, userId)),
-    );
+    const tokens = await Promise.all(userIds.map((id) => this.issueLivekitToken(roomName, id)));
 
     return {
       roomId: room.id,

@@ -46,12 +46,15 @@ export class LiveKitService {
       ttl?: number;
       canPublish?: boolean;
       canSubscribe?: boolean;
+      name?: string;
       metadata?: string;
     },
   ): Promise<string> {
     const token = new AccessToken(this.apiKey, this.apiSecret, {
       identity: userId,
       ttl: options?.ttl || 7200,
+      name: options?.name,
+      metadata: options?.metadata,
     });
 
     token.addGrant({
@@ -60,10 +63,6 @@ export class LiveKitService {
       canPublish: options?.canPublish ?? true,
       canSubscribe: options?.canSubscribe ?? true,
     });
-
-    if (options?.metadata) {
-      token.metadata = options.metadata;
-    }
 
     return token.toJwt();
   }
