@@ -239,6 +239,46 @@ export class TasksController {
     return this.tasksService.activate(id, user.id);
   }
 
+  @Post(':id/deactivate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Deactivate a task and stop time tracking',
+    description:
+      'Stops the active tracking session for this task (if any) and deactivates the task.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Task deactivated and tracking stopped',
+    schema: {
+      example: {
+        error: false,
+        code: 0,
+        message: 'Task deactivated',
+        data: {
+          task: {
+            id: 'task-id',
+            name: 'Build authentication module',
+            status: 'PLANNED',
+            isActive: false,
+            progress: 35.5,
+          },
+          session: {
+            id: 'tracking-id',
+            status: 'stopped',
+            duration: 300,
+          },
+        },
+        traceId: 'deactivate456',
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 400, description: 'Task is not active' })
+  deactivate(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.tasksService.deactivate(id, user.id);
+  }
+
   @Post(':id/complete')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Complete a task' })

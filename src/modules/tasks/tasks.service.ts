@@ -13,7 +13,7 @@ import { QueryTasksDto } from './dto/query-tasks.dto';
 import { QueryTaskStatsDto, TaskStatsPeriod } from './dto/query-task-stats.dto';
 import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
 import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
-import { Prisma, TaskStatus } from '@prisma/client';
+import { Prisma, TaskStatus, SessionStatus } from '@prisma/client';
 import { TrackingService } from '../tracking/tracking.service';
 import { CacheService } from '@/common/services/cache.service';
 import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
@@ -390,8 +390,8 @@ export class TasksService {
         },
       });
 
-      // Stop all active/paused sessions (except this task)
-      await this.trackingService.stopAllActiveSessions(userId, id, tx);
+      // Stop all active/paused sessions (including any prior session on this task)
+      await this.trackingService.stopAllActiveSessions(userId, undefined, tx);
 
       // Activate this task
       const updatedTask = await tx.task.update({
@@ -427,6 +427,45 @@ export class TasksService {
     await this.invalidateUserTaskCache(userId, id);
 
     return result;
+  }
+
+  async deactivate(id: string, userId: string) {
+    const task = await this.findOne(id, userId);
+
+    const activeSession = await this.prisma.trackingSession.findFirst({
+      where: {
+        taskId: id,
+        userId,
+        status: { in: [SessionStatus.active, SessionStatus.paused] },
+      },
+    });
+
+    if (!task.isActive && !activeSession) {
+      throw new BadRequestException('Task is not active');
+    }
+
+    let session = null;
+
+    if (activeSession) {
+      session = await this.trackingService.stop(activeSession.id, userId);
+    } else {
+      await this.prisma.task.update({
+        where: { id },
+        data: {
+          isActive: false,
+          status: TaskStatus.PLANNED,
+        },
+      });
+    }
+
+    const updatedTask = await this.findOne(id, userId);
+
+    await this.invalidateUserTaskCache(userId, id);
+
+    return {
+      task: updatedTask,
+      session,
+    };
   }
 
   async checkAndCompleteIfNeeded(taskId: string, progress: number, tx?: any) {

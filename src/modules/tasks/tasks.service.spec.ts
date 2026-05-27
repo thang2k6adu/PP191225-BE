@@ -30,7 +30,12 @@ describe('TasksService', () => {
     mockTrackingService = {
       stopAllActiveSessions: jest.fn(),
       createSession: jest.fn(),
+      stop: jest.fn(),
       checkAndCompleteIfNeeded: jest.fn(),
+    };
+
+    mockPrismaService.trackingSession = {
+      findFirst: jest.fn(),
     };
 
     mockCacheService = {
@@ -228,7 +233,7 @@ describe('TasksService', () => {
       expect(result.session.status).toBe('active');
       expect(mockTrackingService.stopAllActiveSessions).toHaveBeenCalledWith(
         userId,
-        taskId,
+        undefined,
         expect.anything(),
       );
       expect(mockTrackingService.createSession).toHaveBeenCalledWith(
@@ -248,6 +253,79 @@ describe('TasksService', () => {
       mockPrismaService.task.findUnique.mockResolvedValue(task);
 
       await expect(service.activate('task-id', 'user-id')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('deactivate', () => {
+    it('should stop active session and deactivate task', async () => {
+      const taskId = 'task-id';
+      const userId = 'user-id';
+
+      const activeTask = {
+        id: taskId,
+        userId,
+        status: TaskStatus.ACTIVE,
+        isActive: true,
+        name: 'Task',
+        estimateHours: 1,
+        deadline: new Date(),
+        progress: 10,
+        totalTimeSpent: 100,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const deactivatedTask = {
+        ...activeTask,
+        status: TaskStatus.PLANNED,
+        isActive: false,
+      };
+
+      const activeSession = {
+        id: 'session-id',
+        taskId,
+        userId,
+        status: 'active',
+      };
+
+      const stoppedSession = {
+        id: 'session-id',
+        status: 'stopped',
+        duration: 60,
+      };
+
+      mockPrismaService.task.findUnique
+        .mockResolvedValueOnce(activeTask)
+        .mockResolvedValueOnce(deactivatedTask);
+      mockPrismaService.trackingSession.findFirst.mockResolvedValue(activeSession);
+      mockTrackingService.stop.mockResolvedValue(stoppedSession);
+
+      const result = await service.deactivate(taskId, userId);
+
+      expect(mockTrackingService.stop).toHaveBeenCalledWith('session-id', userId);
+      expect(result.task.isActive).toBe(false);
+      expect(result.session).toEqual(stoppedSession);
+    });
+
+    it('should throw BadRequestException if task is not active', async () => {
+      const inactiveTask = {
+        id: 'task-id',
+        userId: 'user-id',
+        status: TaskStatus.PLANNED,
+        isActive: false,
+        name: 'Task',
+        estimateHours: 1,
+        deadline: new Date(),
+        progress: 0,
+        totalTimeSpent: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockPrismaService.task.findUnique.mockResolvedValue(inactiveTask);
+      mockPrismaService.trackingSession.findFirst.mockResolvedValue(null);
+
+      await expect(service.deactivate('task-id', 'user-id')).rejects.toThrow(BadRequestException);
     });
   });
 
