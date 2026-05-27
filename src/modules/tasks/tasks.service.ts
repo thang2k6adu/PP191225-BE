@@ -357,10 +357,22 @@ export class TasksService {
             userId: true,
             createdAt: true,
             updatedAt: true,
+            trackingSessions: {
+              where: { status: SessionStatus.active },
+              select: { startTime: true },
+              take: 1,
+              orderBy: { startTime: 'desc' },
+            },
           },
         });
 
-        return task;
+        if (!task) return null;
+
+        const { trackingSessions, ...taskFields } = task;
+        return {
+          ...taskFields,
+          currentSessionStartTime: trackingSessions[0]?.startTime?.toISOString() ?? null,
+        };
       },
       CacheTTL.taskActive,
     );
