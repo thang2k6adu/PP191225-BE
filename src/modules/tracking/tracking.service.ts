@@ -19,9 +19,6 @@ export class TrackingService {
     private tasksService: TasksService,
   ) {}
 
-  /**
-   * Create new tracking session when task is activated
-   */
   async createSession(taskId: string, userId: string, tx?: any) {
     const prisma = tx || this.prisma;
 
@@ -50,14 +47,9 @@ export class TrackingService {
     });
   }
 
-  /**
-   * Stop all active/paused sessions for a user (except excluded task)
-   * Called when activating a different task
-   */
   async stopAllActiveSessions(userId: string, excludeTaskId?: string, tx?: any) {
     const prisma = tx || this.prisma;
 
-    // Find all active or paused sessions
     const activeSessions = await prisma.trackingSession.findMany({
       where: {
         userId,
@@ -69,15 +61,12 @@ export class TrackingService {
 
     const now = new Date();
 
-    // Stop each session and update task progress
     for (const session of activeSessions) {
       const task = session.task;
       const previousProgress = task.progress;
 
-      // Calculate duration
       const duration = Math.floor((now.getTime() - session.startTime.getTime()) / 1000);
 
-      // Update session
       await prisma.trackingSession.update({
         where: { id: session.id },
         data: {
@@ -89,7 +78,6 @@ export class TrackingService {
         },
       });
 
-      // Update task totalTimeSpent and progress
       const newTotalTimeSpent = task.totalTimeSpent + duration;
       const estimatedSeconds = Number(task.estimateHours) * 3600;
       const newProgress = Math.min((newTotalTimeSpent / estimatedSeconds) * 100, 100);
@@ -106,98 +94,6 @@ export class TrackingService {
     }
   }
 
-  /**
-   * Pause a tracking session (temporary stop)
-   */
-  async pause(sessionId: string, userId: string) {
-    const session = await this.prisma.trackingSession.findUnique({
-      where: { id: sessionId },
-    });
-
-    if (!session) {
-      throw new NotFoundException('Session not found');
-    }
-
-    if (session.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to pause this session');
-    }
-
-    if (session.status !== SessionStatus.active) {
-      throw new BadRequestException('Session is not active');
-    }
-
-    // Update status to paused (keep endTime null)
-    const updatedSession = await this.prisma.trackingSession.update({
-      where: { id: sessionId },
-      data: { status: SessionStatus.paused },
-      select: {
-        id: true,
-        taskId: true,
-        userId: true,
-        startTime: true,
-        endTime: true,
-        duration: true,
-        status: true,
-        expEarned: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    // Calculate current duration (not saved yet)
-    const now = new Date();
-    const currentDuration = Math.floor((now.getTime() - session.startTime.getTime()) / 1000);
-
-    return {
-      ...updatedSession,
-      currentDuration, // For display only
-    };
-  }
-
-  /**
-   * Resume a paused session
-   */
-  async resume(sessionId: string, userId: string) {
-    const session = await this.prisma.trackingSession.findUnique({
-      where: { id: sessionId },
-    });
-
-    if (!session) {
-      throw new NotFoundException('Session not found');
-    }
-
-    if (session.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to resume this session');
-    }
-
-    if (session.status !== SessionStatus.paused) {
-      throw new BadRequestException('Session is not paused');
-    }
-
-    // Update status to active
-    const updatedSession = await this.prisma.trackingSession.update({
-      where: { id: sessionId },
-      data: { status: SessionStatus.active },
-      select: {
-        id: true,
-        taskId: true,
-        userId: true,
-        startTime: true,
-        endTime: true,
-        duration: true,
-        status: true,
-        expEarned: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    return updatedSession;
-  }
-
-  /**
-   * Stop and finalize a session
-   */
   async stop(sessionId: string, userId: string) {
     const session = await this.prisma.trackingSession.findUnique({
       where: { id: sessionId },
@@ -219,19 +115,15 @@ export class TrackingService {
     const now = new Date();
     const duration = Math.floor((now.getTime() - session.startTime.getTime()) / 1000);
 
-    // Calculate new task progress
     const task = session.task;
     const previousProgress = task.progress;
     const newTotalTimeSpent = task.totalTimeSpent + duration;
     const estimatedSeconds = Number(task.estimateHours) * 3600;
     const newProgress = Math.min((newTotalTimeSpent / estimatedSeconds) * 100, 100);
 
-    // Calculate EXP (in seconds)
     const expEarned = duration;
 
-    // Use transaction to update both session and task
     const result = await this.prisma.$transaction(async (tx) => {
-      // Update session
       const updatedSession = await tx.trackingSession.update({
         where: { id: sessionId },
         data: {
@@ -256,7 +148,6 @@ export class TrackingService {
         },
       });
 
-      // Update task
       await tx.task.update({
         where: { id: session.taskId },
         data: {
@@ -267,7 +158,6 @@ export class TrackingService {
         },
       });
 
-      // Check auto-complete
       if (newProgress >= 100 && task.status !== TaskStatus.DONE) {
         await this.tasksService.checkAndCompleteIfNeeded(session.taskId, newProgress, tx);
       }
@@ -281,13 +171,9 @@ export class TrackingService {
     return result;
   }
 
-  /**
-   * Get task progress with all sessions
-   */
   async getProgress(query: GetProgressDto, userId: string) {
     const { taskId } = query;
 
-    // Verify task ownership
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
       select: {
@@ -307,7 +193,6 @@ export class TrackingService {
       throw new ForbiddenException('You do not have permission to view this task');
     }
 
-    // Get all sessions for this task
     const sessions = await this.prisma.trackingSession.findMany({
       where: { taskId },
       orderBy: { createdAt: 'desc' },
@@ -323,10 +208,8 @@ export class TrackingService {
       },
     });
 
-    // Find active session if any
     const activeSession = sessions.find((s) => s.status === SessionStatus.active);
 
-    // Calculate current progress including active session
     let currentProgress = task.progress;
     let currentTotalTime = task.totalTimeSpent;
 

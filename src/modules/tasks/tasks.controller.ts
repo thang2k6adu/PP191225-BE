@@ -189,13 +189,13 @@ export class TasksController {
   @Post(':id/activate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Activate a task and start/resume time tracking',
+    summary: 'Activate a task and start time tracking',
     description:
-      'Activates a task, deactivates all other tasks, pauses their trackings, and creates or resumes tracking for this task. Only one task can be active at a time per user.',
+      'Activates a task, deactivates all other tasks, stops their tracking sessions, and creates a new tracking session for this task. Only one task can be active at a time per user.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Task activated and tracking started/resumed',
+    description: 'Task activated and tracking started',
     schema: {
       example: {
         error: false,
@@ -233,7 +233,7 @@ export class TasksController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({
     status: 400,
-    description: 'Cannot activate completed task or resume stopped tracking',
+    description: 'Cannot activate completed task',
   })
   activate(@Param('id') id: string, @CurrentUser() user: any) {
     return this.tasksService.activate(id, user.id);

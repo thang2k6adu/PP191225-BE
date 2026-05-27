@@ -21,69 +21,11 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 export class TrackingController {
   constructor(private readonly trackingService: TrackingService) {}
 
-  @Post(':id/pause')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Pause a tracking session (temporary)',
-    description: 'Temporarily pause a session. Can be resumed later.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Session paused successfully',
-    schema: {
-      example: {
-        error: false,
-        code: 0,
-        message: 'Session paused',
-        data: {
-          id: 'session-id',
-          status: 'paused',
-          currentDuration: 120,
-        },
-      },
-    },
-  })
-  @ApiResponse({ status: 404, description: 'Session not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden' })
-  @ApiResponse({ status: 400, description: 'Session is not active' })
-  pause(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.trackingService.pause(id, user.id);
-  }
-
-  @Post(':id/resume')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Resume a paused session',
-    description: 'Resume a previously paused session.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Session resumed successfully',
-    schema: {
-      example: {
-        error: false,
-        code: 0,
-        message: 'Session resumed',
-        data: {
-          id: 'session-id',
-          status: 'active',
-          startTime: '2025-12-25T10:00:00.000Z',
-        },
-      },
-    },
-  })
-  @ApiResponse({ status: 404, description: 'Session not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden' })
-  @ApiResponse({ status: 400, description: 'Session is not paused' })
-  resume(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.trackingService.resume(id, user.id);
-  }
-
   @Post(':id/stop')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Stop and finalize a session',
-    description: 'Stop a session, calculate duration, update task progress. Cannot be resumed.',
+    description: 'Stop a session, calculate duration, and update task progress.',
   })
   @ApiResponse({
     status: 200,
