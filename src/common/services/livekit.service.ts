@@ -62,6 +62,7 @@ export class LiveKitService {
       room: roomName,
       canPublish: options?.canPublish ?? true,
       canSubscribe: options?.canSubscribe ?? true,
+      canUpdateOwnMetadata: true,
     });
 
     return token.toJwt();

@@ -7,6 +7,9 @@ export type LiveKitProfileUser = {
 
 export type LiveKitParticipantMetadata = {
   avatarUrl?: string;
+  selectedTaskId?: string;
+  selectedTaskTitle?: string;
+  selectedTaskProgress?: number;
 };
 
 export function buildParticipantDisplayName(user: LiveKitProfileUser): string {
