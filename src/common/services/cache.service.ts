@@ -29,7 +29,12 @@ export class CacheService {
     }
 
     const value = await factory();
-    await this.set(key, value, ttl);
+    // Some cache stores (e.g. Keyv-based Redis adapters) reject null/undefined values.
+    // For endpoints that legitimately return null (like active task), return as-is
+    // and skip caching to avoid runtime 500 errors.
+    if (value !== null && value !== undefined) {
+      await this.set(key, value, ttl);
+    }
     return value;
   }
 
