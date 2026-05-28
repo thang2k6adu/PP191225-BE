@@ -1,18 +1,14 @@
 import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
-import { LocalAuthGuard } from './guards/local-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { Public } from '@/common/decorators/public.decorator';
 import {
-  AuthResponse,
   FirebaseLoginResponse,
   RefreshTokenResponse,
 } from '@/common/interfaces/api-response.interface';
@@ -21,75 +17,6 @@ import {
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
-  @Public()
-  @Post('register')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Register a new user' })
-  @ApiResponse({
-    status: 201,
-    description: 'User successfully registered',
-    schema: {
-      example: {
-        error: false,
-        code: 0,
-        message: 'Success',
-        data: {
-          user: {
-            id: 'user_123',
-            email: 'test@example.com',
-            firstName: 'John',
-            lastName: 'Doe',
-            role: 'USER',
-          },
-          tokens: {
-            accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-            refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-            expiresIn: 7200,
-          },
-        },
-        traceId: 'VIHOLaKaWe',
-      },
-    },
-  })
-  async register(@Body() registerDto: RegisterDto): Promise<AuthResponse> {
-    return this.authService.register(registerDto);
-  }
-
-  @Public()
-  @UseGuards(LocalAuthGuard)
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login user' })
-  @ApiResponse({
-    status: 200,
-    description: 'User successfully logged in',
-    schema: {
-      example: {
-        error: false,
-        code: 0,
-        message: 'Success',
-        data: {
-          user: {
-            id: 'user_123',
-            email: 'test@example.com',
-            firstName: 'John',
-            lastName: 'Doe',
-            role: 'USER',
-          },
-          tokens: {
-            accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-            refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-            expiresIn: 7200,
-          },
-        },
-        traceId: 'VIHOLaKaWe',
-      },
-    },
-  })
-  async login(@Body() loginDto: LoginDto): Promise<AuthResponse> {
-    return this.authService.login(loginDto);
-  }
 
   @Public()
   @Post('firebase/login')

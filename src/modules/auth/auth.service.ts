@@ -1,15 +1,7 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcrypt';
 import { PrismaService } from '@/database/prisma.service';
-import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
 import { FirebaseLoginDto } from './dto/firebase-login.dto';
 import { AuthResponse, FirebaseLoginResponse } from '@/common/interfaces/api-response.interface';
 import { FirebaseService } from './services/firebase.service';
@@ -27,73 +19,6 @@ export class AuthService {
     private firebaseService: FirebaseService,
     private mailService: MailService,
   ) {}
-
-  async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!user || !user.isActive) {
-      return null;
-    }
-
-    // Firebase users don't have password
-    if (!user.password) {
-      return null;
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return null;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password: _, ...result } = user;
-    return result;
-  }
-
-  async login(loginDto: LoginDto): Promise<AuthResponse> {
-    const user = await this.validateUser(loginDto.email, loginDto.password);
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    return this.generateTokens(user);
-  }
-
-  async register(registerDto: RegisterDto): Promise<AuthResponse> {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: registerDto.email },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('User with this email already exists');
-    }
-
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-
-    const user = await this.prisma.user.create({
-      data: {
-        email: registerDto.email,
-        contactEmail: null,
-        password: hashedPassword,
-        firstName: registerDto.firstName,
-        lastName: registerDto.lastName,
-      },
-      select: {
-        id: true,
-        email: true,
-        contactEmail: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
-      },
-    });
-
-    return this.generateTokens(user);
-  }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({

@@ -5,7 +5,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { LocalStrategy } from './strategies/local.strategy';
 import { PrismaService } from '@/database/prisma.service';
 import { FirebaseService } from './services/firebase.service';
 import { MailModule } from '../mail/mail.module';
@@ -26,7 +25,7 @@ import { MailModule } from '../mail/mail.module';
     MailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, FirebaseService, JwtStrategy, LocalStrategy, PrismaService],
+  providers: [AuthService, FirebaseService, JwtStrategy, PrismaService],
   exports: [AuthService],
 })
 export class AuthModule {}

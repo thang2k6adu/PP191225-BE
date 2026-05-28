@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { PrismaService } from '@/database/prisma.service';
 import { FirebaseService } from './services/firebase.service';
+import { MailService } from '../mail/mail.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -44,6 +45,10 @@ describe('AuthService', () => {
     verifyIdToken: jest.fn(),
   };
 
+  const mockMailService = {
+    sendEmail: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -64,6 +69,10 @@ describe('AuthService', () => {
           provide: FirebaseService,
           useValue: mockFirebaseService,
         },
+        {
+          provide: MailService,
+          useValue: mockMailService,
+        },
       ],
     }).compile();
 
@@ -76,33 +85,5 @@ describe('AuthService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
-  });
-
-  describe('validateUser', () => {
-    it('should return user if credentials are valid', async () => {
-      const mockUser = {
-        id: '1',
-        email: 'test@example.com',
-        password: 'hashedPassword',
-        isActive: true,
-      };
-
-      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      jest.spyOn(require('bcrypt'), 'compare').mockResolvedValue(true);
-
-      const result = await service.validateUser('test@example.com', 'password');
-
-      expect(result).toBeDefined();
-      expect(result.password).toBeUndefined();
-    });
-
-    it('should return null if user not found', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(null);
-
-      const result = await service.validateUser('test@example.com', 'password');
-
-      expect(result).toBeNull();
-    });
   });
 });
