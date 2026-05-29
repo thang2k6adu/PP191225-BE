@@ -1,25 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import { Server } from 'socket.io';
+import { RealtimeGateway } from '../../websocket/realtime.gateway';
 
 @Injectable()
-@WebSocketGateway({
-  namespace: '/notifications',
-})
 export class WebsocketChannel {
-  @WebSocketServer()
-  server: Server;
-
   private readonly logger = new Logger(WebsocketChannel.name);
+
+  constructor(private readonly realtimeGateway: RealtimeGateway) {}
 
   async send(
     userId: string,
     title: string,
     message: string,
-    data?: Record<string, any>,
+    data?: Record<string, unknown>,
   ): Promise<void> {
-    // Send notification to specific user's room
-    this.server.to(`user:${userId}`).emit('notification', {
+    this.realtimeGateway.sendToUser(userId, 'notification', {
       title,
       message,
       data,
@@ -27,13 +21,5 @@ export class WebsocketChannel {
     });
 
     this.logger.log(`WebSocket notification sent to user ${userId}: ${title}`);
-  }
-
-  handleConnection(client: any) {
-    this.logger.log(`Client connected: ${client.id}`);
-  }
-
-  handleDisconnect(client: any) {
-    this.logger.log(`Client disconnected: ${client.id}`);
   }
 }

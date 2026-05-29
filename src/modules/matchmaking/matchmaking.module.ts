@@ -4,10 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MatchmakingService } from './matchmaking.service';
 import { MatchmakingRedisService } from './matchmaking-redis.service';
 import { MatchmakingController } from './matchmaking.controller';
-import { MatchmakingGateway } from './matchmaking.gateway';
 import { PrismaService } from '@/database/prisma.service';
 import { LiveKitService } from '@/common/services/livekit.service';
 import { RoomsModule } from '../rooms/rooms.module';
+import { WebSocketModule } from '../websocket/websocket.module';
 
 /**
  * Matchmaking Module
@@ -16,6 +16,7 @@ import { RoomsModule } from '../rooms/rooms.module';
 @Module({
   imports: [
     forwardRef(() => RoomsModule),
+    forwardRef(() => WebSocketModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -25,13 +26,7 @@ import { RoomsModule } from '../rooms/rooms.module';
     }),
   ],
   controllers: [MatchmakingController],
-  providers: [
-    MatchmakingService,
-    MatchmakingRedisService,
-    MatchmakingGateway,
-    PrismaService,
-    LiveKitService,
-  ],
-  exports: [MatchmakingService, MatchmakingGateway],
+  providers: [MatchmakingService, MatchmakingRedisService, PrismaService, LiveKitService],
+  exports: [MatchmakingService],
 })
 export class MatchmakingModule {}

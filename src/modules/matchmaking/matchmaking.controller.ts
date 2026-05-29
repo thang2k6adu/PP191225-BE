@@ -7,12 +7,9 @@ import {
   HttpCode,
   HttpStatus,
   ConflictException,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { MatchmakingService } from './matchmaking.service';
-import { MatchmakingGateway } from './matchmaking.gateway';
 import { JoinMatchmakingDto, MatchmakingResponseDto } from './dto/matchmaking.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -26,11 +23,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 @UseGuards(JwtAuthGuard)
 @Controller('matchmaking')
 export class MatchmakingController {
-  constructor(
-    private readonly matchmakingService: MatchmakingService,
-    @Inject(forwardRef(() => MatchmakingGateway))
-    private readonly matchmakingGateway: MatchmakingGateway,
-  ) {}
+  constructor(private readonly matchmakingService: MatchmakingService) {}
 
   // Random matching - find available room or wait in queue
   @Post('join')

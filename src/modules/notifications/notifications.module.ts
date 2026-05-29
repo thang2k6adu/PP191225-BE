@@ -8,9 +8,10 @@ import { WebsocketChannel } from './channels/websocket.channel';
 import { PrismaService } from '@/database/prisma.service';
 import { MailModule } from '../mail/mail.module';
 import { QueuesModule } from '../queues/queues.module';
+import { WebSocketModule } from '../websocket/websocket.module';
 
 @Module({
-  imports: [MailModule, forwardRef(() => QueuesModule)],
+  imports: [MailModule, forwardRef(() => QueuesModule), WebSocketModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,

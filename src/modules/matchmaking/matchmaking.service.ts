@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/database/prisma.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { MatchmakingRedisService } from './matchmaking-redis.service';
-import { MatchmakingGateway } from './matchmaking.gateway';
+import { RealtimeGateway } from '../websocket/realtime.gateway';
 import { LiveKitService } from '@/common/services/livekit.service';
 import {
   buildParticipantDisplayName,
@@ -14,7 +14,9 @@ import {
 export class MatchmakingService {
   private readonly logger = new Logger(MatchmakingService.name);
 
-  private onlineUsers: Map<string, string> = new Map();
+  private onlineUsers: Map<string, Set<string>> = new Map();
+  private disconnectGraceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private readonly disconnectGraceMs = 5000;
   private readonly MIN_USERS_FOR_MATCH = 2;
   private readonly instanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -48,8 +50,8 @@ export class MatchmakingService {
     private redisService: MatchmakingRedisService,
     private livekitService: LiveKitService,
     private configService: ConfigService,
-    @Inject(forwardRef(() => MatchmakingGateway))
-    private gateway: MatchmakingGateway,
+    @Inject(forwardRef(() => RealtimeGateway))
+    private gateway: RealtimeGateway,
   ) {
     this.setupPubSubHandlers();
     this.logger.log(`🎮 Matchmaking service initialized on ${this.instanceId}`);
@@ -60,8 +62,7 @@ export class MatchmakingService {
       const { userId, targetInstanceId, event, payload } = data;
 
       if (targetInstanceId === this.instanceId) {
-        const socketId = this.onlineUsers.get(userId);
-        if (socketId) {
+        if (this.isUserConnectedLocally(userId)) {
           this.gateway.sendToUser(userId, event, payload);
           this.logger.debug(`📨 Delivered ${event} to user ${userId} on this instance`);
         } else {
@@ -81,9 +82,12 @@ export class MatchmakingService {
   }
 
   registerUser(userId: string, socketId: string): void {
-    this.onlineUsers.set(userId, socketId);
+    this.clearDisconnectGrace(userId);
 
-    // Register in Redis for cross-instance visibility
+    const sockets = this.onlineUsers.get(userId) ?? new Set<string>();
+    sockets.add(socketId);
+    this.onlineUsers.set(userId, sockets);
+
     this.redisService.registerSocket(userId, socketId, this.instanceId).catch((error) => {
       this.logger.error(`Failed to register socket in Redis: ${error.message}`);
     });
@@ -92,18 +96,60 @@ export class MatchmakingService {
   }
 
   async unregisterUser(userId: string, socketId: string): Promise<void> {
-    const currentSocketId = this.onlineUsers.get(userId);
+    const sockets = this.onlineUsers.get(userId);
 
-    if (currentSocketId && currentSocketId !== socketId) {
+    if (!sockets || !sockets.has(socketId)) {
       this.logger.warn(
-        `Ignoring stale disconnect for user ${userId}: socket ${socketId}, current socket ${currentSocketId}`,
+        `Ignoring stale disconnect for user ${userId}: socket ${socketId} not in active set`,
+      );
+      return;
+    }
+
+    sockets.delete(socketId);
+
+    if (sockets.size > 0) {
+      this.onlineUsers.set(userId, sockets);
+      await this.redisService.unregisterSocket(userId, socketId).catch((error) => {
+        this.logger.error(`Failed to unregister socket in Redis: ${error.message}`);
+      });
+      this.logger.log(
+        `User ${userId} socket ${socketId} removed; ${sockets.size} connection(s) remain`,
       );
       return;
     }
 
     this.onlineUsers.delete(userId);
+    this.scheduleDisconnectCleanup(userId, socketId);
+  }
 
-    // Unregister from Redis
+  private clearDisconnectGrace(userId: string): void {
+    const timer = this.disconnectGraceTimers.get(userId);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectGraceTimers.delete(userId);
+    }
+  }
+
+  private scheduleDisconnectCleanup(userId: string, socketId: string): void {
+    this.clearDisconnectGrace(userId);
+
+    const timer = setTimeout(() => {
+      this.disconnectGraceTimers.delete(userId);
+      void this.finalizeUserDisconnect(userId, socketId);
+    }, this.disconnectGraceMs);
+
+    this.disconnectGraceTimers.set(userId, timer);
+    this.logger.log(
+      `User ${userId} has no active sockets; queue cleanup scheduled in ${this.disconnectGraceMs}ms`,
+    );
+  }
+
+  private async finalizeUserDisconnect(userId: string, socketId: string): Promise<void> {
+    if (this.isUserConnectedLocally(userId)) {
+      this.logger.log(`Skipping disconnect cleanup for ${userId}; user reconnected`);
+      return;
+    }
+
     await this.redisService.unregisterSocket(userId, socketId).catch((error) => {
       this.logger.error(`Failed to unregister socket in Redis: ${error.message}`);
     });
@@ -111,10 +157,15 @@ export class MatchmakingService {
     const userState = await this.redisService.getUserState(userId);
     if (userState && userState.status === 'WAITING') {
       await this.redisService.removeFromQueue('random', userId);
-      this.logger.log(`User ${userId} removed from queue on disconnect`);
+      this.logger.log(`User ${userId} removed from queue after disconnect grace period`);
     }
 
     this.logger.log(`User unregistered: ${userId} from socket ${socketId}`);
+  }
+
+  isUserConnectedLocally(userId: string): boolean {
+    const sockets = this.onlineUsers.get(userId);
+    return !!sockets && sockets.size > 0;
   }
 
   async cancelMatchmaking(userId: string): Promise<void> {
@@ -147,10 +198,11 @@ export class MatchmakingService {
     }
 
     // TODO: nếu không ở instance này thì sao ???
-    const socketId = this.onlineUsers.get(userId);
-    if (!socketId) {
+    if (!this.isUserConnectedLocally(userId)) {
       throw new ConflictException('User not connected');
     }
+
+    const socketId = this.getUserSocketId(userId);
 
     // TODO: cái này có thể gây race condition, 2 là nó chỉ tìm first thôi, các cái sau thỏa mãn thì ko có
     // Có thể thêm current member
@@ -409,7 +461,11 @@ export class MatchmakingService {
   }
 
   getUserSocketId(userId: string): string | undefined {
-    return this.onlineUsers.get(userId);
+    const sockets = this.onlineUsers.get(userId);
+    if (!sockets || sockets.size === 0) {
+      return undefined;
+    }
+    return sockets.values().next().value;
   }
 
   async getStats() {

@@ -1,26 +1,30 @@
 import {
   WebSocketGateway,
   WebSocketServer,
+  SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
   ConnectedSocket,
-  SubscribeMessage,
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { MatchmakingService } from './matchmaking.service';
+import { MatchmakingService } from '../matchmaking/matchmaking.service';
 
+/**
+ * Unified realtime gateway (default namespace `/`).
+ * One authenticated connection per session; user-scoped rooms for delivery.
+ */
 @WebSocketGateway({
-  namespace: '/matchmaking',
+  namespace: '/',
 })
-export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  private readonly logger = new Logger(MatchmakingGateway.name);
+  private readonly logger = new Logger(RealtimeGateway.name);
 
   constructor(
     private jwtService: JwtService,
@@ -29,10 +33,23 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     private matchmakingService: MatchmakingService,
   ) {}
 
+  private extractToken(client: Socket): string | undefined {
+    const authToken = client.handshake.auth?.token;
+    if (typeof authToken === 'string' && authToken.length > 0) {
+      return authToken.startsWith('Bearer ') ? authToken.slice(7) : authToken;
+    }
+
+    const header = client.handshake.headers?.authorization;
+    if (typeof header === 'string' && header.startsWith('Bearer ')) {
+      return header.slice(7);
+    }
+
+    return undefined;
+  }
+
   async handleConnection(client: Socket) {
     try {
-      const token =
-        client.handshake.auth?.token || client.handshake.headers?.authorization?.split(' ')[1];
+      const token = this.extractToken(client);
 
       if (!token) {
         this.logger.warn(`Client ${client.id} connected without token`);
@@ -48,15 +65,14 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
       client.data.userId = payload.id;
       client.data.user = payload;
 
-      this.matchmakingService.registerUser(payload.id, client.id);
-
       await client.join(`user:${payload.id}`);
+      this.matchmakingService.registerUser(payload.id, client.id);
 
       this.logger.log(`Client ${client.id} connected as user ${payload.id}`);
 
       client.emit('connected', {
         userId: payload.id,
-        message: 'Successfully connected to matchmaking server',
+        message: 'Successfully connected to realtime server',
       });
     } catch (error) {
       this.logger.error(`Authentication failed for client ${client.id}: ${error.message}`);
@@ -74,9 +90,7 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     }
 
     this.logger.log(`Client ${client.id} (user ${userId}) disconnected`);
-
     await this.matchmakingService.unregisterUser(userId, client.id);
-    this.logger.log(`User ${userId} unregistered and cleaned up`);
   }
 
   @SubscribeMessage('join_room')
@@ -89,9 +103,6 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     }
 
     const { roomId } = data;
-
-    // TODO: Query database to verify user is member of this room
-
     await client.join(`room:${roomId}`);
 
     this.logger.log(`User ${userId} joined Socket.IO room ${roomId}`);
@@ -127,19 +138,19 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     return { success: false, message: 'Use REST API endpoint' };
   }
 
-  broadcastToRoom(roomId: string, event: string, data: any) {
-    this.server.to(`room:${roomId}`).emit(event, data);
-  }
-
-  sendToUser(userId: string, event: string, data: any) {
+  sendToUser(userId: string, event: string, data: unknown): void {
     this.server.to(`user:${userId}`).emit(event, data);
     this.logger.debug(`Sent '${event}' event to user ${userId}`);
   }
 
-  sendToUsers(userIds: string[], event: string, data: any) {
+  sendToUsers(userIds: string[], event: string, data: unknown): void {
     userIds.forEach((userId) => {
       this.sendToUser(userId, event, data);
     });
     this.logger.log(`Sent '${event}' event to ${userIds.length} users`);
+  }
+
+  broadcastToRoom(roomId: string, event: string, data: unknown): void {
+    this.server.to(`room:${roomId}`).emit(event, data);
   }
 }

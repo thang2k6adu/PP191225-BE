@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
-import { AppWebSocketGateway } from './websocket.gateway';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { RealtimeGateway } from './realtime.gateway';
+import { MatchmakingModule } from '../matchmaking/matchmaking.module';
 
 @Module({
   imports: [
@@ -12,8 +13,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       }),
       inject: [ConfigService],
     }),
+    forwardRef(() => MatchmakingModule),
   ],
-  providers: [AppWebSocketGateway],
-  exports: [AppWebSocketGateway],
+  providers: [RealtimeGateway],
+  exports: [RealtimeGateway],
 })
 export class WebSocketModule {}
