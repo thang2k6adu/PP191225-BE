@@ -27,6 +27,22 @@ export class TasksService {
     private cacheService: CacheService,
   ) {}
 
+  private buildTaskListStatusFilter(query: QueryTasksDto): Pick<Prisma.TaskWhereInput, 'status'> {
+    if (query.excludeDone) {
+      return { status: { not: TaskStatus.DONE } };
+    }
+
+    if (query.statuses?.length) {
+      return { status: { in: query.statuses } };
+    }
+
+    if (query.status) {
+      return { status: query.status };
+    }
+
+    return {};
+  }
+
   private async invalidateUserTaskCache(userId: string, taskId?: string): Promise<void> {
     await this.cacheService.del(CacheKeys.tasks.active(userId));
     // Cứ nghĩ tới 1 pattern thì thường là list pattern (vì có nhiều page cho 1 list)
@@ -241,16 +257,11 @@ export class TasksService {
       async () => {
         const { skip, take, page, size } = getPaginationOptions(query.page, query.size);
 
-        const where: any = {
+        const where: Prisma.TaskWhereInput = {
           userId, // Users can only see their own tasks
+          ...this.buildTaskListStatusFilter(query),
         };
 
-        // Status filter
-        if (query.status) {
-          where.status = query.status;
-        }
-
-        // Active filter
         if (query.isActive !== undefined) {
           where.isActive = query.isActive;
         }

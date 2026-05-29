@@ -395,6 +395,74 @@ describe('TasksService', () => {
     });
   });
 
+  describe('findAll', () => {
+    const userId = 'user-id';
+
+    beforeEach(() => {
+      mockPrismaService.task.findMany.mockResolvedValue([]);
+      mockPrismaService.task.count.mockResolvedValue(0);
+    });
+
+    it('should filter by single status', async () => {
+      await service.findAll({ status: TaskStatus.ACTIVE }, userId);
+
+      expect(mockPrismaService.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId,
+            status: TaskStatus.ACTIVE,
+          }),
+        }),
+      );
+    });
+
+    it('should filter by multiple statuses', async () => {
+      await service.findAll({ statuses: [TaskStatus.PLANNED, TaskStatus.ACTIVE] }, userId);
+
+      expect(mockPrismaService.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId,
+            status: { in: [TaskStatus.PLANNED, TaskStatus.ACTIVE] },
+          }),
+        }),
+      );
+    });
+
+    it('should exclude done tasks when excludeDone is true', async () => {
+      await service.findAll({ excludeDone: true }, userId);
+
+      expect(mockPrismaService.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId,
+            status: { not: TaskStatus.DONE },
+          }),
+        }),
+      );
+    });
+
+    it('should prioritize excludeDone over statuses and status', async () => {
+      await service.findAll(
+        {
+          excludeDone: true,
+          statuses: [TaskStatus.DONE],
+          status: TaskStatus.DONE,
+        },
+        userId,
+      );
+
+      expect(mockPrismaService.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId,
+            status: { not: TaskStatus.DONE },
+          }),
+        }),
+      );
+    });
+  });
+
   describe('remove', () => {
     it('should delete a task', async () => {
       const taskId = 'task-id';

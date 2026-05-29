@@ -59,7 +59,11 @@ export class TasksController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all tasks with pagination' })
+  @ApiOperation({
+    summary: 'Get all tasks with pagination',
+    description:
+      'Supports filters: status (single), statuses (multiple, comma-separated), excludeDone, isActive, search',
+  })
   @ApiResponse({
     status: 200,
     description: 'Tasks retrieved successfully',

@@ -26,7 +26,9 @@ export const CacheKeys = {
     list: (userId: string, query: QueryTasksDto) =>
       `task:list:user:${userId}:page:${normalize(query.page)}:size:${normalize(
         query.size,
-      )}:status:${normalize(query.status)}:isActive:${normalize(query.isActive)}:search:${normalize(
+      )}:status:${normalize(query.status)}:statuses:${normalize(
+        query.statuses?.join(',') ?? '',
+      )}:excludeDone:${normalize(query.excludeDone)}:isActive:${normalize(query.isActive)}:search:${normalize(
         query.search,
       )}`,
     stats: (userId: string, query: QueryTaskStatsDto) =>
