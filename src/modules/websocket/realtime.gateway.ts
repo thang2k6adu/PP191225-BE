@@ -13,10 +13,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 
-/**
- * Unified realtime gateway (default namespace `/`).
- * One authenticated connection per session; user-scoped rooms for delivery.
- */
 @WebSocketGateway({
   namespace: '/',
 })

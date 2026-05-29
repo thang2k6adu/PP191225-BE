@@ -66,7 +66,7 @@ export class MatchmakingService {
           this.gateway.sendToUser(userId, event, payload);
           this.logger.debug(`📨 Delivered ${event} to user ${userId} on this instance`);
         } else {
-          this.logger.warn(`⚠️ User ${userId} not found on this instance`);
+          this.logger.warn(` User ${userId} not found on this instance`);
         }
       }
     });
@@ -277,7 +277,7 @@ export class MatchmakingService {
   private async createMatch(users: Array<{ userId: string; socketId?: string }>): Promise<void> {
     if (users.length < this.MIN_USERS_FOR_MATCH) {
       this.logger.warn(
-        `❌ createMatch called with ${users.length} users (need ${this.MIN_USERS_FOR_MATCH})`,
+        ` createMatch called with ${users.length} users (need ${this.MIN_USERS_FOR_MATCH})`,
       );
       return;
     }
@@ -301,7 +301,7 @@ export class MatchmakingService {
         .map((m) => m.userId);
 
       if (invalidUsers.length > 0) {
-        this.logger.warn(`⚠️ Users already in rooms: ${invalidUsers.join(', ')}. Aborting.`);
+        this.logger.warn(` Users already in rooms: ${invalidUsers.join(', ')}. Aborting.`);
 
         for (const user of users) {
           await this.redisService.addToQueue('random', {
@@ -343,7 +343,7 @@ export class MatchmakingService {
         maxParticipants: 10,
       });
 
-      this.logger.log(`✅ Room created ${room.id} (${roomName}) for ${userIds.length} users`);
+      this.logger.log(` Room created ${room.id} (${roomName}) for ${userIds.length} users`);
 
       await this.notifyMatchFound(room.id, roomName, users);
 
@@ -354,7 +354,7 @@ export class MatchmakingService {
         instanceId: this.instanceId,
       });
     } catch (error) {
-      this.logger.error(`❌ Failed to create match: ${error.message}`);
+      this.logger.error(` Failed to create match: ${error.message}`);
 
       for (const user of users) {
         await this.redisService.addToQueue('random', {
@@ -398,13 +398,13 @@ export class MatchmakingService {
         const isLocalInstance = socketInfo?.instanceId === this.instanceId;
 
         if (!socketInfo) {
-          this.logger.warn(`⚠️ User ${user.userId} disconnected before match notification`);
+          this.logger.warn(` User ${user.userId} disconnected before match notification`);
           return { success: false, userId: user.userId };
         }
 
         const dbUser = userById.get(user.userId);
         if (!dbUser) {
-          this.logger.warn(`⚠️ User ${user.userId} not found for LiveKit token`);
+          this.logger.warn(` User ${user.userId} not found for LiveKit token`);
           return { success: false, userId: user.userId };
         }
 
@@ -427,7 +427,7 @@ export class MatchmakingService {
 
         if (isLocalInstance) {
           this.gateway.sendToUser(user.userId, 'match_found', payload);
-          this.logger.log(`✅ [Local] Notified user ${user.userId} about match ${roomId}`);
+          this.logger.log(` [Local] Notified user ${user.userId} about match ${roomId}`);
         } else {
           await this.redisService.publishEvent('notify_user', {
             userId: user.userId,
@@ -436,13 +436,13 @@ export class MatchmakingService {
             payload,
           });
           this.logger.log(
-            `✅ [Remote] Published notification for user ${user.userId} to instance ${socketInfo.instanceId}`,
+            ` [Remote] Published notification for user ${user.userId} to instance ${socketInfo.instanceId}`,
           );
         }
 
         return { success: true, userId: user.userId };
       } catch (error) {
-        this.logger.error(`❌ Failed to notify user ${user.userId}: ${error.message}`);
+        this.logger.error(`Failed to notify user ${user.userId}: ${error.message}`);
         return { success: false, userId: user.userId, error: error.message };
       }
     });
@@ -454,9 +454,9 @@ export class MatchmakingService {
     );
 
     if (failed.length > 0) {
-      this.logger.error(`⚠️ Failed to notify ${failed.length}/${users.length} users`);
+      this.logger.error(`Failed to notify ${failed.length}/${users.length} users`);
     } else {
-      this.logger.log(`✅ Successfully notified all ${users.length} users`);
+      this.logger.log(` Successfully notified all ${users.length} users`);
     }
   }
 
