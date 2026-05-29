@@ -63,7 +63,24 @@ export class UsersController {
 
   @Get('profile')
   @ApiOperation({ summary: 'Get current user profile' })
-  @ApiResponse({ status: 200, description: 'Profile retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile retrieved successfully',
+    schema: {
+      example: {
+        error: false,
+        code: 0,
+        message: 'Success',
+        data: {
+          id: 'uuid',
+          email: 'user@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          exp: 3600,
+        },
+      },
+    },
+  })
   getProfile(@CurrentUser() user: any) {
     return this.usersService.getProfile(user.id);
   }

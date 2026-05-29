@@ -10,12 +10,46 @@ import { CacheService } from '@/common/services/cache.service';
 import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
 import { ConflictException } from '@nestjs/common/exceptions/conflict.exception';
 
+const PROFILE_SELECT = {
+  id: true,
+  email: true,
+  contactEmail: true,
+  firstName: true,
+  lastName: true,
+  avatar: true,
+  work: true,
+  major: true,
+  bio: true,
+  role: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 @Injectable()
 export class UsersService {
   constructor(
     private prisma: PrismaService,
     private cacheService: CacheService,
   ) {}
+
+  async getUserTotalExp(userId: string): Promise<number> {
+    const result = await this.prisma.trackingSession.aggregate({
+      where: { userId },
+      _sum: { expEarned: true },
+    });
+
+    return result._sum.expEarned ?? 0;
+  }
+
+  private async withExp<T extends Record<string, unknown>>(user: T, userId: string) {
+    const exp = await this.getUserTotalExp(userId);
+    return { ...user, exp };
+  }
+
+  async invalidateProfileCache(userId: string): Promise<void> {
+    await this.cacheService.del(CacheKeys.users.profile(userId));
+  }
 
   async create(createUserDto: CreateUserDto) {
     const existingUser = await this.prisma.user.findUnique({
@@ -200,10 +234,26 @@ export class UsersService {
   async getProfile(userId: string) {
     const cacheKey = CacheKeys.users.profile(userId);
 
-    return this.cacheService.getOrSet(cacheKey, () => this.findOne(userId), CacheTTL.userProfile);
+    return this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: PROFILE_SELECT,
+        });
+
+        if (!user) {
+          throw new NotFoundException('User not found');
+        }
+
+        return this.withExp(user, userId);
+      },
+      CacheTTL.userProfile,
+    );
   }
 
   async updateProfile(userId: string, updateUserDto: UpdateUserDto) {
-    return this.update(userId, updateUserDto);
+    const user = await this.update(userId, updateUserDto);
+    return this.withExp(user, userId);
   }
 }

@@ -45,6 +45,7 @@ export class TasksService {
 
   private async invalidateUserTaskCache(userId: string, taskId?: string): Promise<void> {
     await this.cacheService.del(CacheKeys.tasks.active(userId));
+    await this.cacheService.del(CacheKeys.users.profile(userId));
     // Cứ nghĩ tới 1 pattern thì thường là list pattern (vì có nhiều page cho 1 list)
     await this.cacheService.invalidatePattern(CacheKeys.tasks.listPattern(userId));
     await this.cacheService.invalidatePattern(CacheKeys.tasks.statsPattern(userId));

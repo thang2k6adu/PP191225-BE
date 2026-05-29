@@ -10,6 +10,8 @@ import { PrismaService } from '@/database/prisma.service';
 import { GetProgressDto } from './dto/get-progress.dto';
 import { SessionStatus, TaskStatus } from '@prisma/client';
 import { TasksService } from '../tasks/tasks.service';
+import { CacheService } from '@/common/services/cache.service';
+import { CacheKeys } from '@/common/utils/cache-key.util';
 
 @Injectable()
 export class TrackingService {
@@ -17,7 +19,12 @@ export class TrackingService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => TasksService))
     private tasksService: TasksService,
+    private cacheService: CacheService,
   ) {}
+
+  private async invalidateProfileCache(userId: string): Promise<void> {
+    await this.cacheService.del(CacheKeys.users.profile(userId));
+  }
 
   async createSession(taskId: string, userId: string, tx?: any) {
     const prisma = tx || this.prisma;
@@ -91,6 +98,10 @@ export class TrackingService {
           status: TaskStatus.PLANNED,
         },
       });
+    }
+
+    if (activeSessions.length > 0) {
+      await this.invalidateProfileCache(userId);
     }
   }
 
@@ -167,6 +178,8 @@ export class TrackingService {
         progress: newProgress,
       };
     });
+
+    await this.invalidateProfileCache(userId);
 
     return result;
   }
