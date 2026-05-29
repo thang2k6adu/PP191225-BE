@@ -1,24 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, IsEnum, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TaskStatus } from '@prisma/client';
+import { PaginationQueryDto } from '@/common/dto/pagination-query.dto';
 
-export class QueryTasksDto {
-  @ApiProperty({ required: false, default: 1, minimum: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @ApiProperty({ required: false, default: 10, minimum: 1, maximum: 100 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 10;
-
+export class QueryTasksDto extends PaginationQueryDto {
   @ApiProperty({ enum: TaskStatus, required: false })
   @IsEnum(TaskStatus)
   @IsOptional()

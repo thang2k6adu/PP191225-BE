@@ -5,7 +5,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
-import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
+import { PaginatedList } from '@/common/interfaces/api-response.interface';
 import { CacheService } from '@/common/services/cache.service';
 import { CacheKeys, CacheTTL } from '@/common/utils/cache-key.util';
 import { ConflictException } from '@nestjs/common/exceptions/conflict.exception';
@@ -54,13 +54,13 @@ export class UsersService {
     return user;
   }
 
-  async findAll(query: QueryUsersDto): Promise<PaginatedResponse<any>> {
+  async findAll(query: QueryUsersDto): Promise<PaginatedList<any>> {
     const cacheKey = CacheKeys.users.list(query);
 
     return this.cacheService.getOrSet(
       cacheKey,
       async () => {
-        const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+        const { skip, take, page, size } = getPaginationOptions(query.page, query.size);
 
         const where = query.search
           ? {
@@ -97,7 +97,7 @@ export class UsersService {
           this.prisma.user.count({ where }),
         ]);
 
-        return paginate(users, total, page, limit);
+        return paginate(users, total, page, size);
       },
       CacheTTL.userList,
     );

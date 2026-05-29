@@ -15,7 +15,7 @@ export const CacheKeys = {
     profile: (userId: string) => `user:profile:${userId}`,
     detail: (userId: string) => `user:detail:${userId}`,
     list: (query: QueryUsersDto) =>
-      `user:list:page:${normalize(query.page)}:limit:${normalize(query.limit)}:search:${normalize(
+      `user:list:page:${normalize(query.page)}:size:${normalize(query.size)}:search:${normalize(
         query.search,
       )}`,
     listPattern: () => 'user:list:*',
@@ -24,8 +24,8 @@ export const CacheKeys = {
     active: (userId: string) => `task:active:${userId}`,
     detail: (userId: string, taskId: string) => `task:detail:${userId}:${taskId}`,
     list: (userId: string, query: QueryTasksDto) =>
-      `task:list:user:${userId}:page:${normalize(query.page)}:limit:${normalize(
-        query.limit,
+      `task:list:user:${userId}:page:${normalize(query.page)}:size:${normalize(
+        query.size,
       )}:status:${normalize(query.status)}:isActive:${normalize(query.isActive)}:search:${normalize(
         query.search,
       )}`,

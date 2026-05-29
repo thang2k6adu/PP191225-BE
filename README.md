@@ -157,15 +157,13 @@ Sau khi setup, xem [CODING_GUIDE.md](./CODING_GUIDE.md) để biết:
   "error": false,
   "code": 0,
   "message": "Success",
-  "data": {
-    "items": [],
-    "meta": {
-      "itemCount": 0,
-      "totalItems": 0,
-      "itemsPerPage": 10,
-      "totalPages": 1,
-      "currentPage": 1
-    }
+  "data": [],
+  "meta": {
+    "itemCount": 0,
+    "totalItems": 0,
+    "itemsPerPage": 10,
+    "totalPages": 0,
+    "currentPage": 1
   },
   "traceId": "VIHOLaKaWe"
 }

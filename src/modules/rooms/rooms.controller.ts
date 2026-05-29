@@ -43,45 +43,40 @@ export class RoomsController {
         error: false,
         code: 0,
         message: 'Success',
-        data: {
-          rooms: {
-            items: [
-              {
-                id: 'room-uuid-1',
-                type: 'PUBLIC',
-                topic: 'math',
-                livekitRoomName: 'public-math',
-                status: 'ACTIVE',
-                maxMembers: 10,
-                currentMembers: 3,
-              },
-              {
-                id: 'room-uuid-2',
-                type: 'PUBLIC',
-                topic: 'coding',
-                livekitRoomName: 'public-coding',
-                status: 'ACTIVE',
-                maxMembers: 10,
-                currentMembers: 1,
-              },
-            ],
-            meta: {
-              itemCount: 2,
-              totalItems: 18,
-              itemsPerPage: 10,
-              totalPages: 2,
-              currentPage: 1,
-            },
+        data: [
+          {
+            id: 'room-uuid-1',
+            type: 'PUBLIC',
+            topic: 'math',
+            livekitRoomName: 'public-math',
+            status: 'ACTIVE',
+            maxMembers: 10,
+            currentMembers: 3,
           },
+          {
+            id: 'room-uuid-2',
+            type: 'PUBLIC',
+            topic: 'coding',
+            livekitRoomName: 'public-coding',
+            status: 'ACTIVE',
+            maxMembers: 10,
+            currentMembers: 1,
+          },
+        ],
+        meta: {
+          itemCount: 2,
+          totalItems: 18,
+          itemsPerPage: 10,
+          totalPages: 2,
+          currentPage: 1,
         },
         traceId: 'abc123',
       },
     },
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getPublicRooms(@Query() query: QueryRoomsDto) {
-    const rooms = await this.roomsService.getPublicRooms(query);
-    return { rooms };
+  getPublicRooms(@Query() query: QueryRoomsDto) {
+    return this.roomsService.getPublicRooms(query);
   }
 
   @Post(':roomId/join')

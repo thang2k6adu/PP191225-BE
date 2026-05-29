@@ -68,24 +68,22 @@ export class TasksController {
         error: false,
         code: 0,
         message: 'Success',
-        data: {
-          items: [
-            {
-              id: 'task-id',
-              name: 'Build authentication module',
-              estimateHours: 6,
-              deadline: '2025-12-30T00:00:00.000Z',
-              status: 'ACTIVE',
-              isActive: true,
-            },
-          ],
-          meta: {
-            itemCount: 1,
-            totalItems: 3,
-            itemsPerPage: 10,
-            totalPages: 1,
-            currentPage: 1,
+        data: [
+          {
+            id: 'task-id',
+            name: 'Build authentication module',
+            estimateHours: 6,
+            deadline: '2025-12-30T00:00:00.000Z',
+            status: 'ACTIVE',
+            isActive: true,
           },
+        ],
+        meta: {
+          itemCount: 1,
+          totalItems: 3,
+          itemsPerPage: 10,
+          totalPages: 1,
+          currentPage: 1,
         },
         traceId: 'xyz789',
       },

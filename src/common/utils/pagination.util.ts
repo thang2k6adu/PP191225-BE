@@ -1,31 +1,19 @@
-import { PaginatedResponse } from '../interfaces/api-response.interface';
-
-export interface PaginationOptions {
-  page?: number;
-  limit?: number;
-}
-
-export interface PaginationResult<T> {
-  items: T[];
-  total: number;
-  page: number;
-  limit: number;
-}
+import { PaginatedList } from '../interfaces/api-response.interface';
 
 export function paginate<T>(
   items: T[],
   total: number,
   page: number,
-  limit: number,
-): PaginatedResponse<T> {
-  const totalPages = Math.ceil(total / limit);
+  size: number,
+): PaginatedList<T> {
+  const totalPages = total === 0 ? 0 : Math.ceil(total / size);
 
   return {
     items,
     meta: {
       itemCount: items.length,
       totalItems: total,
-      itemsPerPage: limit,
+      itemsPerPage: size,
       totalPages,
       currentPage: page,
     },
@@ -34,16 +22,16 @@ export function paginate<T>(
 
 export function getPaginationOptions(
   page?: number,
-  limit?: number,
-): { skip: number; take: number; page: number; limit: number } {
+  size?: number,
+): { skip: number; take: number; page: number; size: number } {
   const currentPage = page && page > 0 ? page : 1;
-  const pageLimit = limit && limit > 0 ? limit : 10;
-  const skip = (currentPage - 1) * pageLimit;
+  const pageSize = size && size > 0 ? Math.min(size, 100) : 10;
+  const skip = (currentPage - 1) * pageSize;
 
   return {
     skip,
-    take: pageLimit,
+    take: pageSize,
     page: currentPage,
-    limit: pageLimit,
+    size: pageSize,
   };
 }

@@ -2,7 +2,17 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nes
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { v4 as uuidv4 } from 'uuid';
-import { ApiResponse } from '../interfaces/api-response.interface';
+import { ApiResponse, PaginatedList } from '../interfaces/api-response.interface';
+
+function isPaginatedList(data: unknown): data is PaginatedList<unknown> {
+  return (
+    !!data &&
+    typeof data === 'object' &&
+    Array.isArray((data as PaginatedList<unknown>).items) &&
+    !!(data as PaginatedList<unknown>).meta &&
+    typeof (data as PaginatedList<unknown>).meta === 'object'
+  );
+}
 
 @Injectable()
 export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T>> {
@@ -11,7 +21,6 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T
 
     return next.handle().pipe(
       map((data) => {
-        // If data is already in ApiResponse format, return as is
         if (data && typeof data === 'object' && 'error' in data) {
           return {
             ...data,
@@ -19,12 +28,22 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T
           };
         }
 
-        // Transform to ApiResponse format
+        if (isPaginatedList(data)) {
+          return {
+            error: false,
+            code: 0,
+            message: 'Success',
+            data: data.items as T,
+            meta: data.meta,
+            traceId,
+          };
+        }
+
         return {
           error: false,
           code: 0,
           message: 'Success',
-          data: data || null,
+          data: data ?? null,
           traceId,
         };
       }),

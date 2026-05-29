@@ -12,7 +12,7 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
 import { QueryTaskStatsDto, TaskStatsPeriod } from './dto/query-task-stats.dto';
 import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
-import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
+import { PaginatedList } from '@/common/interfaces/api-response.interface';
 import { Prisma, TaskStatus, SessionStatus } from '@prisma/client';
 import { TrackingService } from '../tracking/tracking.service';
 import { CacheService } from '@/common/services/cache.service';
@@ -233,13 +233,13 @@ export class TasksService {
     return task;
   }
 
-  async findAll(query: QueryTasksDto, userId: string): Promise<PaginatedResponse<any>> {
+  async findAll(query: QueryTasksDto, userId: string): Promise<PaginatedList<any>> {
     const cacheKey = CacheKeys.tasks.list(userId, query);
 
     return this.cacheService.getOrSet(
       cacheKey,
       async () => {
-        const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+        const { skip, take, page, size } = getPaginationOptions(query.page, query.size);
 
         const where: any = {
           userId, // Users can only see their own tasks
@@ -289,7 +289,7 @@ export class TasksService {
           this.prisma.task.count({ where }),
         ]);
 
-        return paginate(tasks, total, page, limit);
+        return paginate(tasks, total, page, size);
       },
       CacheTTL.taskList,
     );

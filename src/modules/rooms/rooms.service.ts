@@ -10,7 +10,7 @@ import { LiveKitService } from '@/common/services/livekit.service';
 import { RoomType, RoomStatus, RoomMemberStatus, UserStatus, RoomVisibility } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
 import { getPaginationOptions, paginate } from '@/common/utils/pagination.util';
-import { PaginatedResponse } from '@/common/interfaces/api-response.interface';
+import { PaginatedList } from '@/common/interfaces/api-response.interface';
 import { QueryRoomsDto } from './dto/query-rooms.dto';
 import {
   buildParticipantDisplayName,
@@ -120,8 +120,8 @@ export class RoomsService {
     }
   }
 
-  async getPublicRooms(query: QueryRoomsDto): Promise<PaginatedResponse<any>> {
-    const { skip, take, page, limit } = getPaginationOptions(query.page, query.limit);
+  async getPublicRooms(query: QueryRoomsDto): Promise<PaginatedList<any>> {
+    const { skip, take, page, size } = getPaginationOptions(query.page, query.size);
 
     const where = {
       type: RoomType.PUBLIC,
@@ -169,7 +169,7 @@ export class RoomsService {
       };
     });
 
-    return paginate(publicRooms, total, page, limit);
+    return paginate(publicRooms, total, page, size);
   }
 
   async findOrCreatePublicRoom(topic: string, userId: string) {

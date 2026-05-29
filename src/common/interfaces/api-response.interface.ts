@@ -1,11 +1,3 @@
-export interface ApiResponse<T = any> {
-  error: boolean;
-  code: number;
-  message: string;
-  data: T | null;
-  traceId?: string;
-}
-
 export interface PaginationMeta {
   itemCount: number;
   totalItems: number;
@@ -14,7 +6,17 @@ export interface PaginationMeta {
   currentPage: number;
 }
 
-export interface PaginatedResponse<T> {
+export interface ApiResponse<T = unknown> {
+  error: boolean;
+  code: number;
+  message: string;
+  data: T | null;
+  meta?: PaginationMeta | null;
+  traceId?: string;
+}
+
+/** Internal list shape returned by services; unwrapped by `TransformInterceptor`. */
+export interface PaginatedList<T> {
   items: T[];
   meta: PaginationMeta;
 }
