@@ -103,6 +103,7 @@ describe('RoomsService', () => {
 
       mockPrismaService.roomMember.findFirst.mockResolvedValue(null);
       mockPrismaService.$queryRaw.mockResolvedValue([existingRoom]);
+      mockPrismaService.roomMember.findUnique.mockResolvedValue(null);
       mockPrismaService.$executeRaw.mockResolvedValue(1);
       mockPrismaService.roomMember.create.mockResolvedValue({
         id: 'member-id',

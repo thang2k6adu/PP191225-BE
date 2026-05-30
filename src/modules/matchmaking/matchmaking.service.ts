@@ -217,18 +217,41 @@ export class MatchmakingService {
 
     if (availableRoom) {
       const joinedExistingRoom = await this.prisma.$transaction(async (tx) => {
+        const previousMember = await tx.roomMember.findUnique({
+          where: {
+            roomId_userId: {
+              roomId: availableRoom.id,
+              userId,
+            },
+          },
+        });
+
+        if (previousMember && previousMember.status !== 'LEFT') {
+          return true;
+        }
+
         const incremented = await tryIncrementRoomMembers(tx, availableRoom.id);
         if (!incremented) {
           return false;
         }
 
-        await tx.roomMember.create({
-          data: {
-            roomId: availableRoom.id,
-            userId,
-            status: 'JOINED',
-          },
-        });
+        if (previousMember) {
+          await tx.roomMember.update({
+            where: { id: previousMember.id },
+            data: {
+              status: 'JOINED',
+              leftAt: null,
+            },
+          });
+        } else {
+          await tx.roomMember.create({
+            data: {
+              roomId: availableRoom.id,
+              userId,
+              status: 'JOINED',
+            },
+          });
+        }
 
         return true;
       });

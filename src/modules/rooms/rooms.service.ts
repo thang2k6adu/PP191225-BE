@@ -188,11 +188,6 @@ export class RoomsService {
 
     if (availableRoom) {
       const joinedExistingRoom = await this.prisma.$transaction(async (tx) => {
-        const incremented = await tryIncrementRoomMembers(tx, availableRoom.id);
-        if (!incremented) {
-          return false;
-        }
-
         const previousMember = await tx.roomMember.findUnique({
           where: {
             roomId_userId: {
@@ -201,6 +196,15 @@ export class RoomsService {
             },
           },
         });
+
+        if (previousMember && previousMember.status !== RoomMemberStatus.LEFT) {
+          return true;
+        }
+
+        const incremented = await tryIncrementRoomMembers(tx, availableRoom.id);
+        if (!incremented) {
+          return false;
+        }
 
         if (previousMember) {
           await tx.roomMember.update({
@@ -314,11 +318,6 @@ export class RoomsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const incremented = await tryIncrementRoomMembers(tx, room.id);
-      if (!incremented) {
-        throw new ConflictException('Room is full');
-      }
-
       const previousMember = await tx.roomMember.findUnique({
         where: {
           roomId_userId: {
@@ -327,6 +326,15 @@ export class RoomsService {
           },
         },
       });
+
+      if (previousMember && previousMember.status !== RoomMemberStatus.LEFT) {
+        throw new ConflictException('Already a member of this room');
+      }
+
+      const incremented = await tryIncrementRoomMembers(tx, room.id);
+      if (!incremented) {
+        throw new ConflictException('Room is full');
+      }
 
       if (previousMember) {
         await tx.roomMember.update({
@@ -440,18 +448,41 @@ export class RoomsService {
 
     if (availableRoom) {
       const joinedExistingRoom = await this.prisma.$transaction(async (tx) => {
+        const previousMember = await tx.roomMember.findUnique({
+          where: {
+            roomId_userId: {
+              roomId: availableRoom.id,
+              userId,
+            },
+          },
+        });
+
+        if (previousMember && previousMember.status !== RoomMemberStatus.LEFT) {
+          return true;
+        }
+
         const incremented = await tryIncrementRoomMembers(tx, availableRoom.id);
         if (!incremented) {
           return false;
         }
 
-        await tx.roomMember.create({
-          data: {
-            roomId: availableRoom.id,
-            userId,
-            status: RoomMemberStatus.JOINED,
-          },
-        });
+        if (previousMember) {
+          await tx.roomMember.update({
+            where: { id: previousMember.id },
+            data: {
+              status: RoomMemberStatus.JOINED,
+              leftAt: null,
+            },
+          });
+        } else {
+          await tx.roomMember.create({
+            data: {
+              roomId: availableRoom.id,
+              userId,
+              status: RoomMemberStatus.JOINED,
+            },
+          });
+        }
 
         const updatedRoom = await tx.room.findUniqueOrThrow({
           where: { id: availableRoom.id },
