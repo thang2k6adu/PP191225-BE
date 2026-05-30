@@ -19,6 +19,7 @@ export class MatchmakingService {
   private disconnectGraceTimers: Map<string, NodeJS.Timeout> = new Map();
   private readonly disconnectGraceMs = 5000;
   private readonly MIN_USERS_FOR_MATCH = 2;
+  private readonly MATCHMAKING_TOPIC = 'random';
   private readonly instanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   private async findExistingActiveMember(userId: string) {
@@ -33,14 +34,13 @@ export class MatchmakingService {
       include: { room: true },
     });
 
-    console.log(`🔍 [MATCHMAKING] findExistingActiveMember for user ${userId}:`, {
+    console.log(`[MATCHMAKING] findExistingActiveMember for user ${userId}:`, {
       found: !!result,
       roomId: result?.roomId,
       memberStatus: result?.status,
       roomStatus: result?.room?.status,
       roomType: result?.room?.type,
     });
-    console.log('Test ArgoCD deployment');
 
     return result;
   }
@@ -156,8 +156,8 @@ export class MatchmakingService {
     });
 
     const userState = await this.redisService.getUserState(userId);
-    if (userState && userState.status === 'WAITING') {
-      await this.redisService.removeFromQueue('random', userId);
+    if (userState && (userState.status === 'WAITING' || userState.status === 'MATCHED')) {
+      await this.redisService.removeFromQueue(this.MATCHMAKING_TOPIC, userId);
       this.logger.log(`User ${userId} removed from queue after disconnect grace period`);
     }
 
@@ -177,8 +177,48 @@ export class MatchmakingService {
       throw new ConflictException('User is not in matchmaking queue');
     }
 
-    await this.redisService.removeFromQueue('random', userId);
+    await this.redisService.removeFromQueue(this.MATCHMAKING_TOPIC, userId);
     this.logger.log(`User ${userId} cancelled matchmaking`);
+  }
+
+  private async hasActiveMatchmakingSocket(userId: string): Promise<boolean> {
+    if (this.isUserConnectedLocally(userId)) {
+      return true;
+    }
+    const socketInfo = await this.redisService.getSocketInfo(userId);
+    return !!socketInfo;
+  }
+
+  private async reconcileMatchmakingOnJoin(userId: string): Promise<{ status: 'WAITING' } | null> {
+    const userState = await this.redisService.getUserState(userId);
+    const inQueue = await this.redisService.isUserInQueue(this.MATCHMAKING_TOPIC, userId);
+    const hasSocket = await this.hasActiveMatchmakingSocket(userId);
+
+    if (userState?.status === 'WAITING') {
+      if (hasSocket && inQueue) {
+        this.logger.log(`User ${userId} already waiting in queue (idempotent)`);
+        return { status: 'WAITING' };
+      }
+      await this.redisService.removeFromQueue(this.MATCHMAKING_TOPIC, userId);
+      this.logger.log(`Cleared stale WAITING matchmaking state for ${userId}`);
+      return null;
+    }
+
+    if (inQueue && hasSocket) {
+      await this.redisService.setUserState(userId, {
+        topic: this.MATCHMAKING_TOPIC,
+        status: 'WAITING',
+      });
+      this.logger.log(`User ${userId} restored WAITING state for active queue entry`);
+      return { status: 'WAITING' };
+    }
+
+    if (inQueue || userState?.status === 'MATCHED') {
+      await this.redisService.removeFromQueue(this.MATCHMAKING_TOPIC, userId);
+      this.logger.log(`Cleared stale matchmaking state for ${userId}`);
+    }
+
+    return null;
   }
 
   async joinMatchmaking(userId: string): Promise<{
@@ -193,17 +233,16 @@ export class MatchmakingService {
       throw new ConflictException('User already in a room');
     }
 
-    const userState = await this.redisService.getUserState(userId);
-    if (userState && userState.status === 'WAITING') {
-      throw new ConflictException('User already in matchmaking queue');
-    }
-
-    // TODO: nếu không ở instance này thì sao ???
     if (!this.isUserConnectedLocally(userId)) {
       throw new ConflictException('User not connected');
     }
 
     const socketId = this.getUserSocketId(userId);
+
+    const idempotentWait = await this.reconcileMatchmakingOnJoin(userId);
+    if (idempotentWait) {
+      return idempotentWait;
+    }
 
     const availableRoom = await findAvailableRoom(this.prisma, {
       type: 'MATCH',
@@ -278,7 +317,7 @@ export class MatchmakingService {
       }
     }
 
-    await this.redisService.addToQueue('random', {
+    await this.redisService.addToQueue(this.MATCHMAKING_TOPIC, {
       userId,
       joinedAt: Date.now(),
       socketId,
@@ -286,7 +325,10 @@ export class MatchmakingService {
 
     this.logger.log(`User ${userId} added to queue`);
 
-    const matchedUsers = await this.redisService.tryMatch('random', this.MIN_USERS_FOR_MATCH);
+    const matchedUsers = await this.redisService.tryMatch(
+      this.MATCHMAKING_TOPIC,
+      this.MIN_USERS_FOR_MATCH,
+    );
 
     if (matchedUsers.length > 0) {
       await this.createMatch(matchedUsers);
@@ -306,7 +348,7 @@ export class MatchmakingService {
     const userIds = users.map((u) => u.userId);
     const roomName = `match-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    this.logger.log(`🎮 Creating match for users: ${userIds.join(', ')}`);
+    this.logger.log(`Creating match for users: ${userIds.join(', ')}`);
 
     try {
       const existingMembers = await this.prisma.roomMember.findMany({
@@ -325,7 +367,7 @@ export class MatchmakingService {
         this.logger.warn(` Users already in rooms: ${invalidUsers.join(', ')}. Aborting.`);
 
         for (const user of users) {
-          await this.redisService.addToQueue('random', {
+          await this.redisService.addToQueue(this.MATCHMAKING_TOPIC, {
             ...user,
             joinedAt: Date.now(),
           });
@@ -379,7 +421,7 @@ export class MatchmakingService {
       this.logger.error(` Failed to create match: ${error.message}`);
 
       for (const user of users) {
-        await this.redisService.addToQueue('random', {
+        await this.redisService.addToQueue(this.MATCHMAKING_TOPIC, {
           ...user,
           joinedAt: Date.now(),
         });

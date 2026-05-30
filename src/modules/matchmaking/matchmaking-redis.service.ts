@@ -66,7 +66,7 @@ export class MatchmakingRedisService {
 
       this.redis.on('connect', () => {
         this.isConnected = true;
-        this.logger.log('✅ Redis connected for matchmaking');
+        this.logger.log('Redis connected for matchmaking');
       });
 
       this.redis.on('error', (error) => {
@@ -212,6 +212,18 @@ export class MatchmakingRedisService {
     const queueKey = this.getQueueKey(topic);
     const queueItems = await this.redis!.lrange(queueKey, 0, -1);
     return queueItems.map((item) => JSON.parse(item) as QueuedUser);
+  }
+
+  async isUserInQueue(topic: string, userId: string): Promise<boolean> {
+    if (!(await this.ensureConnection())) {
+      return false;
+    }
+    const queueKey = this.getQueueKey(topic);
+    const queueItems = await this.redis!.lrange(queueKey, 0, -1);
+    return queueItems.some((item) => {
+      const user = JSON.parse(item) as QueuedUser;
+      return user.userId === userId;
+    });
   }
 
   async clearQueue(topic: string): Promise<void> {

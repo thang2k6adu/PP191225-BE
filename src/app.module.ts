@@ -89,10 +89,10 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
               console.error('Redis connection error:', err.message);
             });
             client.on('connect', () => {
-              console.log('✅ Redis cache connected');
+              console.log('Redis cache connected');
             });
             client.on('reconnecting', () => {
-              console.log('🔄 Redis reconnecting...');
+              console.log('Redis reconnecting...');
             });
           }
 
