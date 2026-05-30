@@ -179,10 +179,10 @@ export class MatchmakingRedisService {
         await this.redis!.setex(userStateKey, 600, JSON.stringify({ topic, status: 'MATCHED' }));
       }
 
-      this.logger.log(`✅ Matched ${users.length} users from queue for topic: ${topic}`);
+      this.logger.log(`Matched ${users.length} users from queue for topic: ${topic}`);
       return users;
     } catch (error) {
-      this.logger.error(`❌ tryMatch failed: ${error.message}`);
+      this.logger.error(`tryMatch failed: ${error.message}`);
       return [];
     }
   }

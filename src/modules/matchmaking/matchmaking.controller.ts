@@ -14,10 +14,6 @@ import { JoinMatchmakingDto, MatchmakingResponseDto } from './dto/matchmaking.dt
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 
-/**
- * Matchmaking Controller
- * Handles HTTP API endpoints for matchmaking
- */
 @ApiTags('matchmaking')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -25,7 +21,6 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 export class MatchmakingController {
   constructor(private readonly matchmakingService: MatchmakingService) {}
 
-  // Random matching - find available room or wait in queue
   @Post('join')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

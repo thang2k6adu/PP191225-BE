@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '@/database/prisma.service';
+import { LiveKitService } from '@/common/services/livekit.service';
 import { NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { RoomType, RoomStatus, RoomMemberStatus, UserStatus } from '@prisma/client';
 
@@ -10,6 +11,7 @@ describe('RoomsService', () => {
   const mockPrismaService = {
     roomMember: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
@@ -17,6 +19,7 @@ describe('RoomsService', () => {
     room: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -24,9 +27,21 @@ describe('RoomsService', () => {
     user: {
       update: jest.fn(),
     },
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
+    $transaction: jest.fn(),
+  };
+
+  const mockLiveKitService = {
+    generateToken: jest.fn(),
+    deleteRoom: jest.fn(),
   };
 
   beforeEach(async () => {
+    mockPrismaService.$transaction.mockImplementation(async (callback) =>
+      callback(mockPrismaService),
+    );
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RoomsService,
@@ -34,11 +49,18 @@ describe('RoomsService', () => {
           provide: PrismaService,
           useValue: mockPrismaService,
         },
+        {
+          provide: LiveKitService,
+          useValue: mockLiveKitService,
+        },
       ],
     }).compile();
 
     service = module.get<RoomsService>(RoomsService);
     jest.clearAllMocks();
+    mockPrismaService.$transaction.mockImplementation(async (callback) =>
+      callback(mockPrismaService),
+    );
   });
 
   it('should be defined', () => {
@@ -66,6 +88,7 @@ describe('RoomsService', () => {
         type: RoomType.PUBLIC,
         status: RoomStatus.WAITING,
         maxMembers: 2,
+        currentMembers: 1,
         members: [
           {
             userId: 'other-user-id',
@@ -79,18 +102,18 @@ describe('RoomsService', () => {
       };
 
       mockPrismaService.roomMember.findFirst.mockResolvedValue(null);
-      mockPrismaService.room.findFirst.mockResolvedValue(existingRoom);
+      mockPrismaService.$queryRaw.mockResolvedValue([existingRoom]);
+      mockPrismaService.$executeRaw.mockResolvedValue(1);
       mockPrismaService.roomMember.create.mockResolvedValue({
         id: 'member-id',
         roomId: 'room-id',
         userId,
         status: RoomMemberStatus.JOINED,
-        user: {
-          id: userId,
-          email: 'user@example.com',
-        },
       });
-      mockPrismaService.roomMember.count.mockResolvedValue(2);
+      mockPrismaService.room.findUniqueOrThrow.mockResolvedValue({
+        ...existingRoom,
+        currentMembers: 2,
+      });
       mockPrismaService.room.update.mockResolvedValue({
         ...existingRoom,
         status: RoomStatus.ACTIVE,
@@ -130,6 +153,7 @@ describe('RoomsService', () => {
         type: RoomType.PUBLIC,
         status: RoomStatus.WAITING,
         maxMembers: 2,
+        currentMembers: 1,
         members: [
           {
             userId,
@@ -143,7 +167,7 @@ describe('RoomsService', () => {
       };
 
       mockPrismaService.roomMember.findFirst.mockResolvedValue(null);
-      mockPrismaService.room.findFirst.mockResolvedValue(null);
+      mockPrismaService.$queryRaw.mockResolvedValue([]);
       mockPrismaService.room.create.mockResolvedValue(newRoom);
       mockPrismaService.user.update.mockResolvedValue({});
 
@@ -222,7 +246,9 @@ describe('RoomsService', () => {
       const userId = 'user-id';
       const room = {
         id: roomId,
+        type: RoomType.PUBLIC,
         status: RoomStatus.ACTIVE,
+        currentMembers: 2,
         members: [
           {
             id: 'member-id',
@@ -239,8 +265,11 @@ describe('RoomsService', () => {
 
       mockPrismaService.room.findUnique.mockResolvedValue(room);
       mockPrismaService.roomMember.update.mockResolvedValue({});
-      mockPrismaService.roomMember.count.mockResolvedValue(1);
-      mockPrismaService.room.update.mockResolvedValue({});
+      mockPrismaService.$executeRaw.mockResolvedValue(1);
+      mockPrismaService.room.findUniqueOrThrow.mockResolvedValue({
+        currentMembers: 1,
+        type: RoomType.PUBLIC,
+      });
       mockPrismaService.user.update.mockResolvedValue({});
 
       const result = await service.leave(roomId, userId);
@@ -248,7 +277,10 @@ describe('RoomsService', () => {
       expect(result).toHaveProperty('message', 'Left room successfully');
       expect(mockPrismaService.roomMember.update).toHaveBeenCalledWith({
         where: { id: 'member-id' },
-        data: { status: RoomMemberStatus.LEFT },
+        data: {
+          status: RoomMemberStatus.LEFT,
+          leftAt: expect.any(Date),
+        },
       });
       expect(mockPrismaService.user.update).toHaveBeenCalledWith({
         where: { id: userId },
@@ -256,16 +288,24 @@ describe('RoomsService', () => {
       });
     });
 
-    it('should delete room if no members left', async () => {
+    it('should close MATCH room when one member remains', async () => {
       const roomId = 'room-id';
       const userId = 'user-id';
       const room = {
         id: roomId,
-        status: RoomStatus.WAITING,
+        type: RoomType.MATCH,
+        status: RoomStatus.ACTIVE,
+        livekitRoomName: 'match-room',
+        currentMembers: 2,
         members: [
           {
             id: 'member-id',
             userId,
+            status: RoomMemberStatus.JOINED,
+          },
+          {
+            id: 'other-member-id',
+            userId: 'other-user-id',
             status: RoomMemberStatus.JOINED,
           },
         ],
@@ -273,14 +313,23 @@ describe('RoomsService', () => {
 
       mockPrismaService.room.findUnique.mockResolvedValue(room);
       mockPrismaService.roomMember.update.mockResolvedValue({});
-      mockPrismaService.roomMember.count.mockResolvedValue(0);
-      mockPrismaService.room.delete.mockResolvedValue({});
+      mockPrismaService.$executeRaw.mockResolvedValue(1);
+      mockPrismaService.room.findUniqueOrThrow.mockResolvedValue({
+        currentMembers: 1,
+        type: RoomType.MATCH,
+      });
+      mockPrismaService.room.update.mockResolvedValue({});
       mockPrismaService.user.update.mockResolvedValue({});
+      mockLiveKitService.deleteRoom.mockResolvedValue(undefined);
 
       await service.leave(roomId, userId);
 
-      expect(mockPrismaService.room.delete).toHaveBeenCalledWith({
+      expect(mockPrismaService.room.update).toHaveBeenCalledWith({
         where: { id: roomId },
+        data: {
+          status: RoomStatus.CLOSED,
+          endedAt: expect.any(Date),
+        },
       });
     });
 
@@ -293,7 +342,7 @@ describe('RoomsService', () => {
       await expect(service.leave(roomId, userId)).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw ForbiddenException if user is not a member', async () => {
+    it('should update user status when user is not a member', async () => {
       const roomId = 'room-id';
       const userId = 'user-id';
       const room = {
@@ -307,8 +356,15 @@ describe('RoomsService', () => {
       };
 
       mockPrismaService.room.findUnique.mockResolvedValue(room);
+      mockPrismaService.user.update.mockResolvedValue({});
 
-      await expect(service.leave(roomId, userId)).rejects.toThrow(ForbiddenException);
+      const result = await service.leave(roomId, userId);
+
+      expect(result).toHaveProperty('message', 'Left room successfully');
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: userId },
+        data: { status: UserStatus.ONLINE },
+      });
     });
   });
 });

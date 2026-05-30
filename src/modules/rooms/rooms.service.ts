@@ -16,6 +16,11 @@ import {
   buildParticipantDisplayName,
   buildParticipantMetadata,
 } from '@/common/utils/livekit-participant.util';
+import {
+  decrementRoomMembers,
+  findAvailableRoom,
+  tryIncrementRoomMembers,
+} from '@/common/utils/room-capacity.util';
 // import { PUBLIC_TOPICS, PublicTopic } from '@/config/app.config';
 
 const livekitUserSelect = {
@@ -131,19 +136,6 @@ export class RoomsService {
     const [rooms, total] = await Promise.all([
       this.prisma.room.findMany({
         where,
-        include: {
-          _count: {
-            select: {
-              members: {
-                where: {
-                  status: {
-                    not: RoomMemberStatus.LEFT,
-                  },
-                },
-              },
-            },
-          },
-        },
         orderBy: {
           topic: 'asc',
         },
@@ -153,21 +145,15 @@ export class RoomsService {
       this.prisma.room.count({ where }),
     ]);
 
-    const publicRooms = rooms.map((room) => {
-      const roomWithCount = room as typeof room & {
-        _count: { members: number };
-      };
-
-      return {
-        id: roomWithCount.id,
-        type: roomWithCount.type,
-        topic: roomWithCount.topic,
-        livekitRoomName: roomWithCount.livekitRoomName,
-        status: roomWithCount.status,
-        maxMembers: roomWithCount.maxMembers,
-        currentMembers: roomWithCount._count.members,
-      };
-    });
+    const publicRooms = rooms.map((room) => ({
+      id: room.id,
+      type: room.type,
+      topic: room.topic,
+      livekitRoomName: room.livekitRoomName,
+      status: room.status,
+      maxMembers: room.maxMembers,
+      currentMembers: room.currentMembers,
+    }));
 
     return paginate(publicRooms, total, page, size);
   }
@@ -190,59 +176,61 @@ export class RoomsService {
       };
     }
 
-    // Find available public room with the same topic
-    const availableRoom = await this.prisma.room.findFirst({
-      where: {
-        type: RoomType.PUBLIC,
-        topic,
-        visibility: RoomVisibility.PUBLIC,
-        status: RoomStatus.ACTIVE,
-      },
-      include: {
-        members: {
-          where: {
-            status: {
-              not: RoomMemberStatus.LEFT,
-            },
-          },
-        },
-      },
+    const availableRoom = await findAvailableRoom(this.prisma, {
+      type: RoomType.PUBLIC,
+      topic,
+      visibility: RoomVisibility.PUBLIC,
+      status: RoomStatus.ACTIVE,
     });
 
     let room;
     let isNewRoom = false;
 
-    if (availableRoom && availableRoom.members.length < availableRoom.maxMembers) {
-      // Join existing room
-      const previousMember = await this.prisma.roomMember.findUnique({
-        where: {
-          roomId_userId: {
-            roomId: availableRoom.id,
-            userId,
+    if (availableRoom) {
+      const joinedExistingRoom = await this.prisma.$transaction(async (tx) => {
+        const incremented = await tryIncrementRoomMembers(tx, availableRoom.id);
+        if (!incremented) {
+          return false;
+        }
+
+        const previousMember = await tx.roomMember.findUnique({
+          where: {
+            roomId_userId: {
+              roomId: availableRoom.id,
+              userId,
+            },
           },
-        },
+        });
+
+        if (previousMember) {
+          await tx.roomMember.update({
+            where: { id: previousMember.id },
+            data: {
+              status: RoomMemberStatus.JOINED,
+              leftAt: null,
+            },
+          });
+        } else {
+          await tx.roomMember.create({
+            data: {
+              roomId: availableRoom.id,
+              userId,
+              status: RoomMemberStatus.JOINED,
+            },
+          });
+        }
+
+        return true;
       });
 
-      if (previousMember) {
-        await this.prisma.roomMember.update({
-          where: { id: previousMember.id },
-          data: {
-            status: RoomMemberStatus.JOINED,
-            leftAt: null,
-          },
-        });
-      } else {
-        await this.prisma.roomMember.create({
-          data: {
-            roomId: availableRoom.id,
-            userId,
-            status: RoomMemberStatus.JOINED,
-          },
+      if (joinedExistingRoom) {
+        room = await this.prisma.room.findUniqueOrThrow({
+          where: { id: availableRoom.id },
         });
       }
+    }
 
-      room = availableRoom;
-    } else {
+    if (!room) {
       // Create new public room
       const roomName = this.generateRoomName(RoomType.PUBLIC, topic);
 
@@ -254,6 +242,7 @@ export class RoomsService {
           status: RoomStatus.ACTIVE,
           livekitRoomName: roomName,
           maxMembers: 10, // Default max for public rooms
+          currentMembers: 1,
           startedAt: new Date(),
           members: {
             create: {
@@ -306,15 +295,6 @@ export class RoomsService {
 
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
-      include: {
-        members: {
-          where: {
-            status: {
-              not: RoomMemberStatus.LEFT,
-            },
-          },
-        },
-      },
     });
 
     if (!room) {
@@ -329,36 +309,43 @@ export class RoomsService {
       throw new ConflictException('Room is not active');
     }
 
-    if (room.members.length >= room.maxMembers) {
+    if (room.currentMembers >= room.maxMembers) {
       throw new ConflictException('Room is full');
     }
 
-    const previousMember = await this.prisma.roomMember.findUnique({
-      where: {
-        roomId_userId: {
-          roomId: room.id,
-          userId,
-        },
-      },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const incremented = await tryIncrementRoomMembers(tx, room.id);
+      if (!incremented) {
+        throw new ConflictException('Room is full');
+      }
 
-    if (previousMember) {
-      await this.prisma.roomMember.update({
-        where: { id: previousMember.id },
-        data: {
-          status: RoomMemberStatus.JOINED,
-          leftAt: null,
+      const previousMember = await tx.roomMember.findUnique({
+        where: {
+          roomId_userId: {
+            roomId: room.id,
+            userId,
+          },
         },
       });
-    } else {
-      await this.prisma.roomMember.create({
-        data: {
-          roomId: room.id,
-          userId,
-          status: RoomMemberStatus.JOINED,
-        },
-      });
-    }
+
+      if (previousMember) {
+        await tx.roomMember.update({
+          where: { id: previousMember.id },
+          data: {
+            status: RoomMemberStatus.JOINED,
+            leftAt: null,
+          },
+        });
+      } else {
+        await tx.roomMember.create({
+          data: {
+            roomId: room.id,
+            userId,
+            status: RoomMemberStatus.JOINED,
+          },
+        });
+      }
+    });
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -386,6 +373,7 @@ export class RoomsService {
         status: RoomStatus.ACTIVE,
         livekitRoomName: roomName,
         maxMembers: userIds.length,
+        currentMembers: userIds.length,
         startedAt: new Date(),
         members: {
           create: userIds.map((userId) => ({
@@ -442,107 +430,77 @@ export class RoomsService {
       throw new ConflictException('User already in a room');
     }
 
-    const availableRoom = await this.prisma.room.findFirst({
-      where: {
-        type: RoomType.PUBLIC,
-        status: RoomStatus.WAITING,
-        members: {
-          some: {
-            status: {
-              not: RoomMemberStatus.LEFT,
-            },
-          },
-        },
-      },
-      include: {
-        members: {
-          where: {
-            status: {
-              not: RoomMemberStatus.LEFT,
-            },
-          },
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true,
-                firstName: true,
-                lastName: true,
-                avatar: true,
-              },
-            },
-          },
-        },
-      },
+    const availableRoom = await findAvailableRoom(this.prisma, {
+      type: RoomType.PUBLIC,
+      status: RoomStatus.WAITING,
+      minCurrentMembers: 1,
     });
 
     let room;
 
-    if (availableRoom && availableRoom.members.length < availableRoom.maxMembers) {
-      await this.prisma.roomMember.create({
-        data: {
-          roomId: availableRoom.id,
-          userId,
-          status: RoomMemberStatus.JOINED,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              avatar: true,
-            },
-          },
-        },
-      });
+    if (availableRoom) {
+      const joinedExistingRoom = await this.prisma.$transaction(async (tx) => {
+        const incremented = await tryIncrementRoomMembers(tx, availableRoom.id);
+        if (!incremented) {
+          return false;
+        }
 
-      const updatedMembers = await this.prisma.roomMember.count({
-        where: {
-          roomId: availableRoom.id,
-          status: {
-            not: RoomMemberStatus.LEFT,
+        await tx.roomMember.create({
+          data: {
+            roomId: availableRoom.id,
+            userId,
+            status: RoomMemberStatus.JOINED,
           },
-        },
-      });
-
-      if (updatedMembers >= availableRoom.maxMembers) {
-        await this.prisma.room.update({
-          where: { id: availableRoom.id },
-          data: { status: RoomStatus.ACTIVE },
         });
-      }
 
-      room = await this.prisma.room.findUnique({
-        where: { id: availableRoom.id },
-        include: {
-          members: {
-            where: {
-              status: {
-                not: RoomMemberStatus.LEFT,
+        const updatedRoom = await tx.room.findUniqueOrThrow({
+          where: { id: availableRoom.id },
+        });
+
+        if (updatedRoom.currentMembers >= updatedRoom.maxMembers) {
+          await tx.room.update({
+            where: { id: availableRoom.id },
+            data: { status: RoomStatus.ACTIVE },
+          });
+        }
+
+        return true;
+      });
+
+      if (joinedExistingRoom) {
+        room = await this.prisma.room.findUnique({
+          where: { id: availableRoom.id },
+          include: {
+            members: {
+              where: {
+                status: {
+                  not: RoomMemberStatus.LEFT,
+                },
               },
-            },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  email: true,
-                  firstName: true,
-                  lastName: true,
-                  avatar: true,
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                    avatar: true,
+                  },
                 },
               },
             },
           },
-        },
-      });
-    } else {
+        });
+      }
+    }
+
+    if (!room) {
       room = await this.prisma.room.create({
         data: {
           type: RoomType.PUBLIC,
           status: RoomStatus.WAITING,
           maxMembers: 2,
+          currentMembers: 1,
           members: {
             create: {
               userId,
@@ -583,6 +541,7 @@ export class RoomsService {
       type: room.type,
       status: room.status,
       maxMembers: room.maxMembers,
+      currentMembers: room.currentMembers,
       members: room.members.map((member) => ({
         userId: member.userId,
         status: member.status,
@@ -630,6 +589,7 @@ export class RoomsService {
       type: room.type,
       status: room.status,
       maxMembers: room.maxMembers,
+      currentMembers: room.currentMembers,
       members: room.members.map((member) => ({
         userId: member.userId,
         status: member.status,
@@ -655,7 +615,7 @@ export class RoomsService {
     }
 
     console.log(
-      `🏠 Room found: type=${room.type}, status=${room.status}, members=${room.members.length}`,
+      `🏠 Room found: type=${room.type}, status=${room.status}, currentMembers=${room.currentMembers}`,
     );
 
     const member = room.members.find((m) => m.userId === userId);
@@ -685,22 +645,24 @@ export class RoomsService {
     }
 
     console.log(`✅ Updating member status to LEFT`);
-    await this.prisma.roomMember.update({
-      where: { id: member.id },
-      data: {
-        status: RoomMemberStatus.LEFT,
-        leftAt: new Date(),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.roomMember.update({
+        where: { id: member.id },
+        data: {
+          status: RoomMemberStatus.LEFT,
+          leftAt: new Date(),
+        },
+      });
+
+      await decrementRoomMembers(tx, roomId);
     });
 
-    const remainingMembers = await this.prisma.roomMember.count({
-      where: {
-        roomId,
-        status: {
-          not: RoomMemberStatus.LEFT,
-        },
-      },
+    const updatedRoom = await this.prisma.room.findUniqueOrThrow({
+      where: { id: roomId },
+      select: { currentMembers: true, type: true },
     });
+
+    const remainingMembers = updatedRoom.currentMembers;
 
     console.log(`👥 Remaining members: ${remainingMembers}`);
 

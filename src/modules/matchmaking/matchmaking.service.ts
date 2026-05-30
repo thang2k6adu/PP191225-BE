@@ -9,6 +9,7 @@ import {
   buildParticipantDisplayName,
   buildParticipantMetadata,
 } from '@/common/utils/livekit-participant.util';
+import { findAvailableRoom, tryIncrementRoomMembers } from '@/common/utils/room-capacity.util';
 
 @Injectable()
 export class MatchmakingService {
@@ -64,7 +65,7 @@ export class MatchmakingService {
       if (targetInstanceId === this.instanceId) {
         if (this.isUserConnectedLocally(userId)) {
           this.gateway.sendToUser(userId, event, payload);
-          this.logger.debug(`📨 Delivered ${event} to user ${userId} on this instance`);
+          this.logger.debug(`Delivered ${event} to user ${userId} on this instance`);
         } else {
           this.logger.warn(` User ${userId} not found on this instance`);
         }
@@ -75,7 +76,7 @@ export class MatchmakingService {
       const { roomId, userIds, instanceId } = data;
       if (instanceId !== this.instanceId) {
         this.logger.log(
-          `📊 Match ${roomId} created by instance ${instanceId} with ${userIds.length} users`,
+          `Match ${roomId} created by instance ${instanceId} with ${userIds.length} users`,
         );
       }
     });
@@ -204,57 +205,54 @@ export class MatchmakingService {
 
     const socketId = this.getUserSocketId(userId);
 
-    // TODO: cái này có thể gây race condition, 2 là nó chỉ tìm first thôi, các cái sau thỏa mãn thì ko có
-    // Có thể thêm current member
-    const availableRoom = await this.prisma.room.findFirst({
-      where: {
-        type: 'MATCH',
-        visibility: 'PUBLIC',
-        status: 'ACTIVE',
-      },
-      include: {
-        members: {
-          where: {
-            status: { not: 'LEFT' },
-          },
-        },
-      },
+    const availableRoom = await findAvailableRoom(this.prisma, {
+      type: 'MATCH',
+      visibility: 'PUBLIC',
+      status: 'ACTIVE',
     });
 
     this.logger.log(
-      `Current member: ${availableRoom?.members.length} / ${availableRoom?.maxMembers}`,
+      `Current member: ${availableRoom?.currentMembers ?? 0} / ${availableRoom?.maxMembers ?? 0}`,
     );
 
-    if (availableRoom && availableRoom.members.length < availableRoom.maxMembers) {
-      // Join available room và emit event ngay lập tức
-      // Nếu là member rồi thì sao??
-      await this.prisma.roomMember.create({
-        data: {
+    if (availableRoom) {
+      const joinedExistingRoom = await this.prisma.$transaction(async (tx) => {
+        const incremented = await tryIncrementRoomMembers(tx, availableRoom.id);
+        if (!incremented) {
+          return false;
+        }
+
+        await tx.roomMember.create({
+          data: {
+            roomId: availableRoom.id,
+            userId,
+            status: 'JOINED',
+          },
+        });
+
+        return true;
+      });
+
+      if (joinedExistingRoom) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { status: 'IN_ROOM' },
+        });
+
+        await this.redisService.setUserState(userId, {
+          status: 'IN_ROOM',
           roomId: availableRoom.id,
-          userId,
-          status: 'JOINED',
-        },
-      });
+          timestamp: Date.now(),
+        });
 
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { status: 'IN_ROOM' },
-      });
+        this.logger.log(`User ${userId} joined existing room ${availableRoom.id}`);
 
-      // Update Redis user state
-      await this.redisService.setUserState(userId, {
-        status: 'IN_ROOM',
-        roomId: availableRoom.id,
-        timestamp: Date.now(),
-      });
+        await this.notifyMatchFound(availableRoom.id, availableRoom.livekitRoomName, [
+          { userId, socketId },
+        ]);
 
-      this.logger.log(`User ${userId} joined existing room ${availableRoom.id}`);
-
-      await this.notifyMatchFound(availableRoom.id, availableRoom.livekitRoomName, [
-        { userId, socketId },
-      ]);
-
-      return { status: 'WAITING' };
+        return { status: 'WAITING' };
+      }
     }
 
     await this.redisService.addToQueue('random', {
@@ -263,7 +261,7 @@ export class MatchmakingService {
       socketId,
     });
 
-    this.logger.log(`📊 User ${userId} added to queue`);
+    this.logger.log(`User ${userId} added to queue`);
 
     const matchedUsers = await this.redisService.tryMatch('random', this.MIN_USERS_FOR_MATCH);
 
@@ -323,6 +321,7 @@ export class MatchmakingService {
           status: 'ACTIVE',
           livekitRoomName: roomName,
           maxMembers: 10,
+          currentMembers: userIds.length,
           startedAt: new Date(),
           members: {
             create: userIds.map((uid) => ({
