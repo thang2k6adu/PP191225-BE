@@ -20,7 +20,6 @@ export class MatchmakingService {
   private readonly disconnectGraceMs = 5000;
   private readonly MIN_USERS_FOR_MATCH = 2;
   private readonly MATCHMAKING_TOPIC = 'random';
-  private readonly instanceId = `instance-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   private async findExistingActiveMember(userId: string) {
     const result = await this.prisma.roomMember.findFirst({
@@ -54,32 +53,7 @@ export class MatchmakingService {
     @Inject(forwardRef(() => RealtimeGateway))
     private gateway: RealtimeGateway,
   ) {
-    this.setupPubSubHandlers();
-    this.logger.log(`🎮 Matchmaking service initialized on ${this.instanceId}`);
-  }
-
-  private setupPubSubHandlers(): void {
-    this.redisService.onEvent('notify_user', (data: any) => {
-      const { userId, targetInstanceId, event, payload } = data;
-
-      if (targetInstanceId === this.instanceId) {
-        if (this.isUserConnectedLocally(userId)) {
-          this.gateway.sendToUser(userId, event, payload);
-          this.logger.debug(`Delivered ${event} to user ${userId} on this instance`);
-        } else {
-          this.logger.warn(` User ${userId} not found on this instance`);
-        }
-      }
-    });
-
-    this.redisService.onEvent('match_created', (data: any) => {
-      const { roomId, userIds, instanceId } = data;
-      if (instanceId !== this.instanceId) {
-        this.logger.log(
-          `Match ${roomId} created by instance ${instanceId} with ${userIds.length} users`,
-        );
-      }
-    });
+    this.logger.log('Matchmaking service initialized');
   }
 
   registerUser(userId: string, socketId: string): void {
@@ -89,11 +63,7 @@ export class MatchmakingService {
     sockets.add(socketId);
     this.onlineUsers.set(userId, sockets);
 
-    this.redisService.registerSocket(userId, socketId, this.instanceId).catch((error) => {
-      this.logger.error(`Failed to register socket in Redis: ${error.message}`);
-    });
-
-    this.logger.log(`User registered: ${userId} with socket ${socketId} on ${this.instanceId}`);
+    this.logger.log(`User registered: ${userId} with socket ${socketId}`);
   }
 
   async unregisterUser(userId: string, socketId: string): Promise<void> {
@@ -110,9 +80,6 @@ export class MatchmakingService {
 
     if (sockets.size > 0) {
       this.onlineUsers.set(userId, sockets);
-      await this.redisService.unregisterSocket(userId, socketId).catch((error) => {
-        this.logger.error(`Failed to unregister socket in Redis: ${error.message}`);
-      });
       this.logger.log(
         `User ${userId} socket ${socketId} removed; ${sockets.size} connection(s) remain`,
       );
@@ -151,10 +118,6 @@ export class MatchmakingService {
       return;
     }
 
-    await this.redisService.unregisterSocket(userId, socketId).catch((error) => {
-      this.logger.error(`Failed to unregister socket in Redis: ${error.message}`);
-    });
-
     const userState = await this.redisService.getUserState(userId);
     if (userState && (userState.status === 'WAITING' || userState.status === 'MATCHED')) {
       await this.redisService.removeFromQueue(this.MATCHMAKING_TOPIC, userId);
@@ -181,18 +144,14 @@ export class MatchmakingService {
     this.logger.log(`User ${userId} cancelled matchmaking`);
   }
 
-  private async hasActiveMatchmakingSocket(userId: string): Promise<boolean> {
-    if (this.isUserConnectedLocally(userId)) {
-      return true;
-    }
-    const socketInfo = await this.redisService.getSocketInfo(userId);
-    return !!socketInfo;
+  private hasActiveMatchmakingSocket(userId: string): boolean {
+    return this.isUserConnectedLocally(userId);
   }
 
   private async reconcileMatchmakingOnJoin(userId: string): Promise<{ status: 'WAITING' } | null> {
     const userState = await this.redisService.getUserState(userId);
     const inQueue = await this.redisService.isUserInQueue(this.MATCHMAKING_TOPIC, userId);
-    const hasSocket = await this.hasActiveMatchmakingSocket(userId);
+    const hasSocket = this.hasActiveMatchmakingSocket(userId);
 
     if (userState?.status === 'WAITING') {
       if (hasSocket && inQueue) {
@@ -410,13 +369,6 @@ export class MatchmakingService {
       this.logger.log(` Room created ${room.id} (${roomName}) for ${userIds.length} users`);
 
       await this.notifyMatchFound(room.id, roomName, users);
-
-      await this.redisService.publishEvent('match_created', {
-        roomId: room.id,
-        roomName,
-        userIds,
-        instanceId: this.instanceId,
-      });
     } catch (error) {
       this.logger.error(` Failed to create match: ${error.message}`);
 
@@ -458,17 +410,9 @@ export class MatchmakingService {
 
     const notifications = users.map(async (user) => {
       try {
-        const socketInfo = await this.redisService.getSocketInfo(user.userId);
-        const isLocalInstance = socketInfo?.instanceId === this.instanceId;
-
-        if (!socketInfo) {
-          this.logger.warn(` User ${user.userId} disconnected before match notification`);
-          return { success: false, userId: user.userId };
-        }
-
         const dbUser = userById.get(user.userId);
         if (!dbUser) {
-          this.logger.warn(` User ${user.userId} not found for LiveKit token`);
+          this.logger.warn(`User ${user.userId} not found for LiveKit token`);
           return { success: false, userId: user.userId };
         }
 
@@ -489,20 +433,8 @@ export class MatchmakingService {
           timestamp: new Date().toISOString(),
         };
 
-        if (isLocalInstance) {
-          this.gateway.sendToUser(user.userId, 'match_found', payload);
-          this.logger.log(` [Local] Notified user ${user.userId} about match ${roomId}`);
-        } else {
-          await this.redisService.publishEvent('notify_user', {
-            userId: user.userId,
-            targetInstanceId: socketInfo.instanceId,
-            event: 'match_found',
-            payload,
-          });
-          this.logger.log(
-            ` [Remote] Published notification for user ${user.userId} to instance ${socketInfo.instanceId}`,
-          );
-        }
+        this.gateway.sendToUser(user.userId, 'match_found', payload);
+        this.logger.log(`Notified user ${user.userId} about match ${roomId}`);
 
         return { success: true, userId: user.userId };
       } catch (error) {

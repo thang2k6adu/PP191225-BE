@@ -12,13 +12,9 @@ export interface QueuedUser {
 export class MatchmakingRedisService {
   private readonly logger = new Logger(MatchmakingRedisService.name);
   private redis: Redis | null = null;
-  private subscriber: Redis | null = null;
   private isConnected = false;
   private readonly QUEUE_KEY_PREFIX = 'matchmaking:queue:';
   private readonly USER_STATE_KEY_PREFIX = 'matchmaking:user:';
-  private readonly SOCKET_KEY_PREFIX = 'matchmaking:socket:';
-  private readonly PUBSUB_CHANNEL = 'matchmaking:events';
-  private eventHandlers = new Map<string, (data: any) => void>();
 
   private readonly TRY_POP_LUA = `
     local queueKey = KEYS[1]
@@ -243,76 +239,7 @@ export class MatchmakingRedisService {
     return `${this.USER_STATE_KEY_PREFIX}${userId}`;
   }
 
-  async registerSocket(userId: string, socketId: string, instanceId: string): Promise<void> {
-    if (!(await this.ensureConnection())) return;
-
-    const key = `${this.SOCKET_KEY_PREFIX}${userId}`;
-    await this.redis!.setex(
-      key,
-      3600,
-      JSON.stringify({ socketId, instanceId, connectedAt: Date.now() }),
-    );
-  }
-
-  async unregisterSocket(userId: string, socketId?: string): Promise<void> {
-    if (!(await this.ensureConnection())) return;
-
-    const key = `${this.SOCKET_KEY_PREFIX}${userId}`;
-    if (!socketId) {
-      await this.redis!.del(key);
-      return;
-    }
-
-    const current = await this.redis!.get(key);
-    if (!current) {
-      return;
-    }
-
-    const socketInfo = JSON.parse(current) as { socketId: string; instanceId: string };
-    if (socketInfo.socketId !== socketId) {
-      return;
-    }
-
-    await this.redis!.del(key);
-  }
-
-  async getSocketInfo(userId: string): Promise<{ socketId: string; instanceId: string } | null> {
-    if (!(await this.ensureConnection())) return null;
-
-    const key = `${this.SOCKET_KEY_PREFIX}${userId}`;
-    const data = await this.redis!.get(key);
-    return data ? JSON.parse(data) : null;
-  }
-
-  async publishEvent(event: string, data: any): Promise<void> {
-    if (!(await this.ensureConnection())) return;
-
-    const message = JSON.stringify({ event, data, timestamp: Date.now() });
-    await this.redis!.publish(this.PUBSUB_CHANNEL, message);
-    this.logger.debug(`📡 Published event: ${event}`);
-  }
-
-  onEvent(event: string, handler: (data: any) => void): void {
-    this.eventHandlers.set(event, handler);
-  }
-
-  private handlePubSubMessage(channel: string, message: string): void {
-    try {
-      const { event, data } = JSON.parse(message);
-      const handler = this.eventHandlers.get(event);
-
-      if (handler) {
-        handler(data);
-      }
-    } catch (error) {
-      this.logger.error(`Failed to handle pub/sub message: ${error.message}`);
-    }
-  }
-
   async onModuleDestroy() {
-    if (this.subscriber) {
-      await this.subscriber.quit();
-    }
     if (this.redis && this.isConnected) {
       await this.redis.quit();
     }
