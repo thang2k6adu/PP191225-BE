@@ -57,7 +57,7 @@ export async function tryIncrementRoomMembers(
   const updated = await prisma.$executeRaw`
     UPDATE "rooms"
     SET "currentMembers" = "currentMembers" + 1
-    WHERE id = CAST(${roomId} AS uuid)
+    WHERE id = ${roomId}
       AND "currentMembers" < "maxMembers"
   `;
 
@@ -71,6 +71,6 @@ export async function decrementRoomMembers(
   await prisma.$executeRaw`
     UPDATE "rooms"
     SET "currentMembers" = GREATEST("currentMembers" - 1, 0)
-    WHERE id = CAST(${roomId} AS uuid)
+    WHERE id = ${roomId}
   `;
 }
