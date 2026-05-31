@@ -3,15 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { existsSync } from 'fs';
-
-export interface UploadOptions {
-  buffer: Buffer;
-  key: string;
-  mimetype: string;
-}
+import { StorageProvider, UploadOptions, UploadProviderResult } from './storage-provider.interface';
 
 @Injectable()
-export class LocalProvider {
+export class LocalProvider implements StorageProvider {
   private destination: string;
 
   constructor(private configService: ConfigService) {
@@ -21,9 +16,7 @@ export class LocalProvider {
     );
   }
 
-  async upload(
-    options: UploadOptions,
-  ): Promise<{ url: string; key: string; size: number; mimetype: string }> {
+  async upload(options: UploadOptions): Promise<UploadProviderResult> {
     const filePath = join(this.destination, options.key);
 
     await this.ensureDirectoryExists(dirname(filePath));

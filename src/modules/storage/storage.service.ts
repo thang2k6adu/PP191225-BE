@@ -7,6 +7,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { S3Provider } from './providers/s3.provider';
 import { LocalProvider } from './providers/local.provider';
+import { CloudinaryProvider } from './providers/cloudinary.provider';
+import { StorageProvider } from './providers/storage-provider.interface';
 import { PrismaService } from '@/database/prisma.service';
 import sharp from 'sharp';
 
@@ -28,17 +30,29 @@ export interface UploadResult {
 
 @Injectable()
 export class StorageService {
-  private provider: S3Provider | LocalProvider;
+  private provider: StorageProvider;
   private providerType: string;
 
   constructor(
     private configService: ConfigService,
     private s3Provider: S3Provider,
     private localProvider: LocalProvider,
+    private cloudinaryProvider: CloudinaryProvider,
     private prisma: PrismaService,
   ) {
     this.providerType = this.configService.get<string>('storage.provider') || 'local';
-    this.provider = this.providerType === 's3' ? this.s3Provider : this.localProvider;
+    this.provider = this.resolveProvider(this.providerType);
+  }
+
+  private resolveProvider(providerType: string): StorageProvider {
+    switch (providerType) {
+      case 's3':
+        return this.s3Provider;
+      case 'cloudinary':
+        return this.cloudinaryProvider;
+      default:
+        return this.localProvider;
+    }
   }
 
   async uploadFile(options: UploadFileOptions): Promise<UploadResult> {
