@@ -134,6 +134,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     return { success: false, message: 'Use REST API endpoint' };
   }
 
+  async isUserConnected(userId: string): Promise<boolean> {
+    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
+    return sockets.length > 0;
+  }
+
   sendToUser(userId: string, event: string, data: unknown): void {
     this.server.to(`user:${userId}`).emit(event, data);
     this.logger.debug(`Sent '${event}' event to user ${userId}`);

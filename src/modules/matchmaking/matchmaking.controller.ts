@@ -45,9 +45,8 @@ export class MatchmakingController {
     @Body() dto: JoinMatchmakingDto,
     @CurrentUser() user: any,
   ): Promise<MatchmakingResponseDto> {
-    // Validate user is connected via WebSocket
-    const socketId = this.matchmakingService.getUserSocketId(user.id);
-    if (!socketId) {
+    const isConnected = await this.matchmakingService.isUserConnected(user.id);
+    if (!isConnected) {
       throw new ConflictException('Please connect to WebSocket before joining matchmaking');
     }
 

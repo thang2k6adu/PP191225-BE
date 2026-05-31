@@ -2,7 +2,7 @@ import { Injectable, ConflictException, Logger, Inject, forwardRef } from '@nest
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/database/prisma.service';
 import { RoomsService } from '../rooms/rooms.service';
-import { MatchmakingRedisService } from './matchmaking-redis.service';
+import { MatchmakingRedisService, QueuedUser } from './matchmaking-redis.service';
 import { RealtimeGateway } from '../websocket/realtime.gateway';
 import { LiveKitService } from '@/common/services/livekit.service';
 import {
@@ -113,7 +113,7 @@ export class MatchmakingService {
   }
 
   private async finalizeUserDisconnect(userId: string, socketId: string): Promise<void> {
-    if (this.isUserConnectedLocally(userId)) {
+    if (this.isUserConnectedLocally(userId) || (await this.isUserConnected(userId))) {
       this.logger.log(`Skipping disconnect cleanup for ${userId}; user reconnected`);
       return;
     }
@@ -132,6 +132,10 @@ export class MatchmakingService {
     return !!sockets && sockets.size > 0;
   }
 
+  async isUserConnected(userId: string): Promise<boolean> {
+    return this.gateway.isUserConnected(userId);
+  }
+
   async cancelMatchmaking(userId: string): Promise<void> {
     const userState = await this.redisService.getUserState(userId);
 
@@ -144,14 +148,10 @@ export class MatchmakingService {
     this.logger.log(`User ${userId} cancelled matchmaking`);
   }
 
-  private hasActiveMatchmakingSocket(userId: string): boolean {
-    return this.isUserConnectedLocally(userId);
-  }
-
   private async reconcileMatchmakingOnJoin(userId: string): Promise<{ status: 'WAITING' } | null> {
     const userState = await this.redisService.getUserState(userId);
     const inQueue = await this.redisService.isUserInQueue(this.MATCHMAKING_TOPIC, userId);
-    const hasSocket = this.hasActiveMatchmakingSocket(userId);
+    const hasSocket = await this.isUserConnected(userId);
 
     if (userState?.status === 'WAITING') {
       if (hasSocket && inQueue) {
@@ -192,11 +192,9 @@ export class MatchmakingService {
       throw new ConflictException('User already in a room');
     }
 
-    if (!this.isUserConnectedLocally(userId)) {
+    if (!(await this.isUserConnected(userId))) {
       throw new ConflictException('User not connected');
     }
-
-    const socketId = this.getUserSocketId(userId);
 
     const idempotentWait = await this.reconcileMatchmakingOnJoin(userId);
     if (idempotentWait) {
@@ -268,9 +266,7 @@ export class MatchmakingService {
 
         this.logger.log(`User ${userId} joined existing room ${availableRoom.id}`);
 
-        await this.notifyMatchFound(availableRoom.id, availableRoom.livekitRoomName, [
-          { userId, socketId },
-        ]);
+        await this.notifyMatchFound(availableRoom.id, availableRoom.livekitRoomName, [userId]);
 
         return { status: 'WAITING' };
       }
@@ -279,7 +275,6 @@ export class MatchmakingService {
     await this.redisService.addToQueue(this.MATCHMAKING_TOPIC, {
       userId,
       joinedAt: Date.now(),
-      socketId,
     });
 
     this.logger.log(`User ${userId} added to queue`);
@@ -296,7 +291,7 @@ export class MatchmakingService {
     return { status: 'WAITING' };
   }
 
-  private async createMatch(users: Array<{ userId: string; socketId?: string }>): Promise<void> {
+  private async createMatch(users: QueuedUser[]): Promise<void> {
     if (users.length < this.MIN_USERS_FOR_MATCH) {
       this.logger.warn(
         ` createMatch called with ${users.length} users (need ${this.MIN_USERS_FOR_MATCH})`,
@@ -368,7 +363,7 @@ export class MatchmakingService {
 
       this.logger.log(` Room created ${room.id} (${roomName}) for ${userIds.length} users`);
 
-      await this.notifyMatchFound(room.id, roomName, users);
+      await this.notifyMatchFound(room.id, roomName, userIds);
     } catch (error) {
       this.logger.error(` Failed to create match: ${error.message}`);
 
@@ -392,12 +387,12 @@ export class MatchmakingService {
   private async notifyMatchFound(
     roomId: string,
     livekitRoomName: string,
-    users: Array<{ userId: string; socketId?: string }>,
+    userIds: string[],
   ): Promise<void> {
     const wsUrl = this.configService.get<string>('LIVEKIT_URL') || 'ws://localhost:7880';
 
     const dbUsers = await this.prisma.user.findMany({
-      where: { id: { in: users.map((u) => u.userId) } },
+      where: { id: { in: userIds } },
       select: {
         id: true,
         email: true,
@@ -408,15 +403,15 @@ export class MatchmakingService {
     });
     const userById = new Map(dbUsers.map((u) => [u.id, u]));
 
-    const notifications = users.map(async (user) => {
+    const notifications = userIds.map(async (userId) => {
       try {
-        const dbUser = userById.get(user.userId);
+        const dbUser = userById.get(userId);
         if (!dbUser) {
-          this.logger.warn(`User ${user.userId} not found for LiveKit token`);
-          return { success: false, userId: user.userId };
+          this.logger.warn(`User ${userId} not found for LiveKit token`);
+          return { success: false, userId };
         }
 
-        const token = await this.livekitService.generateToken(livekitRoomName, user.userId, {
+        const token = await this.livekitService.generateToken(livekitRoomName, userId, {
           ttl: 7200,
           canPublish: true,
           canSubscribe: true,
@@ -429,17 +424,17 @@ export class MatchmakingService {
           livekitRoomName,
           token,
           wsUrl,
-          matchedUsers: users.map((u) => u.userId),
+          matchedUsers: userIds,
           timestamp: new Date().toISOString(),
         };
 
-        this.gateway.sendToUser(user.userId, 'match_found', payload);
-        this.logger.log(`Notified user ${user.userId} about match ${roomId}`);
+        this.gateway.sendToUser(userId, 'match_found', payload);
+        this.logger.log(`Notified user ${userId} about match ${roomId}`);
 
-        return { success: true, userId: user.userId };
+        return { success: true, userId };
       } catch (error) {
-        this.logger.error(`Failed to notify user ${user.userId}: ${error.message}`);
-        return { success: false, userId: user.userId, error: error.message };
+        this.logger.error(`Failed to notify user ${userId}: ${error.message}`);
+        return { success: false, userId, error: error.message };
       }
     });
 
@@ -450,18 +445,10 @@ export class MatchmakingService {
     );
 
     if (failed.length > 0) {
-      this.logger.error(`Failed to notify ${failed.length}/${users.length} users`);
+      this.logger.error(`Failed to notify ${failed.length}/${userIds.length} users`);
     } else {
-      this.logger.log(` Successfully notified all ${users.length} users`);
+      this.logger.log(` Successfully notified all ${userIds.length} users`);
     }
-  }
-
-  getUserSocketId(userId: string): string | undefined {
-    const sockets = this.onlineUsers.get(userId);
-    if (!sockets || sockets.size === 0) {
-      return undefined;
-    }
-    return sockets.values().next().value;
   }
 
   async getStats() {

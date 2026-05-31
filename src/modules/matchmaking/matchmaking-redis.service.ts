@@ -5,7 +5,6 @@ import Redis from 'ioredis';
 export interface QueuedUser {
   userId: string;
   joinedAt: number;
-  socketId?: string;
 }
 
 @Injectable()

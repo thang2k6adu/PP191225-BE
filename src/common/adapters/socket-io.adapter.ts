@@ -45,9 +45,9 @@ export class SocketIoAdapter extends IoAdapter {
       await Promise.all([pubClient.connect(), subClient.connect()]);
 
       this.adapterConstructor = createAdapter(pubClient, subClient);
-      console.log('✅ Socket.IO Redis adapter connected');
+      console.log('Socket.IO Redis adapter connected');
     } catch (error) {
-      console.log('⚠️  Socket.IO running without Redis adapter (single instance only)');
+      console.log(' Socket.IO running without Redis adapter (single instance only)');
       // Don't throw - allow server to start without Redis
     }
   }
