@@ -2,6 +2,7 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nes
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { MetricsService } from '../../modules/monitoring/metrics.service';
+import { shouldSkipRequestLogging } from '@/common/utils/skip-request-logging.util';
 
 @Injectable()
 export class MetricsInterceptor implements NestInterceptor {
@@ -9,7 +10,11 @@ export class MetricsInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
-    const { method, route } = request;
+    const { method, route, url } = request;
+
+    if (shouldSkipRequestLogging(route?.path || url)) {
+      return next.handle();
+    }
     const routePath = route?.path || request.url;
     const startTime = Date.now();
 

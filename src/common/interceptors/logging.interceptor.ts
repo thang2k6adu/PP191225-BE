@@ -2,6 +2,7 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } fr
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Request, Response } from 'express';
+import { shouldSkipRequestLogging } from '@/common/utils/skip-request-logging.util';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -10,6 +11,10 @@ export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<Request>();
     const { method, url, body, query, params } = request;
+
+    if (shouldSkipRequestLogging(url)) {
+      return next.handle();
+    }
     const now = Date.now();
 
     this.logger.log(
